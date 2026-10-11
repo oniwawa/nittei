@@ -1,0 +1,4 @@
+{
+  // Tailwind の @theme などを「知らないルール」と警告しないようにする
+  "css.lint.unknownAtRules": "ignore"
+}

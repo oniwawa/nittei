@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* Figma (EasyMeet) のスタイルを Tailwind の色・フォントとして登録する。
+   bg-sub / text-main / border-frame のようにクラス名で使える。
+   Figma 上の名前と違うものは右に元の名前を書いている */
+@theme {
+  --color-sub: #5b8845;
+  --color-main: #92c27b;
+  --color-pale: #f0ffe8; /* base（text-base が文字サイズと衝突するので改名） */
+  --color-off: #cbcbdb; /* not */
+  --color-frame: #b6f0af; /* third */
+  --color-accent: #d09900;
+  /* 「今から入れる面談」以降の紺系 */
+  --color-sub2: #454e88;
+  --color-main2: #7b85c2;
+  --color-frame2: #afc6f0; /* third2 */
+  --color-text: #0c0c13;
+
+  --font-sans: "Noto Sans JP", sans-serif;
+
+  /* Figma の Drop Shadow */
+  --shadow-button: 3px 4px 4px rgb(168 148 152 / 0.47);
+}
+
+@layer components {
+  /* Figma のチェックボックス。未選択は緑の枠だけ、選択中は Figma から書き出した画像。
+     大きさは em（文字の大きさが基準）なので、横の文字に合わせて伸び縮みする */
+  .checkbox {
+    appearance: none;
+    flex-shrink: 0;
+    width: 1.25em;
+    height: 1.25em;
+    border: 2px solid var(--color-sub);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+  }
+  .checkbox:checked {
+    border: none;
+    background: url("./assets/checkbox-checked.svg") center / 100% 100% no-repeat;
+  }
+}
