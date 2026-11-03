@@ -35,6 +35,13 @@
     background: white;
     cursor: pointer;
   }
+  /* プルダウンの上下矢印。画像の形で切り抜き(mask)、色は bg-* クラスで塗る。
+     こうすると緑・紺・灰色(選べないとき)を1つの画像で出し分けられる */
+  .icon-updown {
+    width: 10px;
+    height: 14px;
+    mask: url("./assets/icon-updown.svg") center / contain no-repeat;
+  }
   .checkbox:checked {
     border: none;
     background: url("./assets/checkbox-checked.svg") center / 100% 100% no-repeat;

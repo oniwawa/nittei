@@ -2,7 +2,6 @@
 // 見た目は Figma「EasyMeet」の page_interviewScheduler に合わせている。
 
 import dropdownIcon from "./assets/icon-dropdown.svg";
-import { minutesToTime } from "./format";
 import type { DateExclusion, Recurrence, WeekdayExclusion } from "./types";
 
 /** <select> の選択肢1つ分 */
@@ -17,6 +16,10 @@ const DAYS_AHEAD_CHOICES: Choice[] = [
 ];
 
 const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** 時刻の「時」「分」で選べる値 */
+const HOUR_CHOICES = Array.from({ length: 24 }, (_, i) => i);
+const MINUTE_CHOICES = [0, 15, 30, 45];
 
 const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
   { value: "weekly", label: "毎週" },
@@ -44,10 +47,12 @@ interface Theme {
   field: string;
   /** パネルの枠の色 */
   frame: string;
+  /** プルダウンの上下矢印の色 */
+  arrow: string;
 }
 
-const GREEN: Theme = { text: "text-sub", field: "border-main", frame: "border-frame" };
-const BLUE: Theme = { text: "text-sub2", field: "border-main2", frame: "border-frame2" };
+const GREEN: Theme = { text: "text-sub", field: "border-main", frame: "border-frame", arrow: "bg-main" };
+const BLUE: Theme = { text: "text-sub2", field: "border-main2", frame: "border-frame2", arrow: "bg-main2" };
 
 const HEADING = "text-2xl font-semibold";
 /** 入力欄。disabled のときは Figma の「not」色（灰色）になる */
@@ -58,8 +63,42 @@ function fieldClass(theme: Theme): string {
   return `${FIELD_BASE} ${theme.field}`;
 }
 
-function timeFieldClass(theme: Theme): string {
-  return `${fieldClass(theme)} w-[120px]`;
+/** 2桁の数字の <option> を並べる（8 → "08"） */
+function numberOptions(values: number[], selected: number): string {
+  return values
+    .map((v) => `<option value="${v}" ${v === selected ? "selected" : ""}>${String(v).padStart(2, "0")}</option>`)
+    .join("");
+}
+
+/**
+ * 右側に上下矢印が付いたプルダウン。
+ * peer を付けた select が disabled になると、後ろの矢印も灰色になる
+ */
+function upDownSelect(theme: Theme, attrs: string, optionsHtml: string, disabled: boolean): string {
+  return `
+    <span class="relative flex items-center">
+      <select ${attrs} ${disabled ? "disabled" : ""} class="peer ${fieldClass(theme)} cursor-pointer appearance-none pr-8">
+        ${optionsHtml}
+      </select>
+      <span aria-hidden="true" class="icon-updown pointer-events-none absolute right-3 ${theme.arrow} peer-disabled:bg-off"></span>
+    </span>
+  `;
+}
+
+/**
+ * 時刻の選択。「時」「分」のプルダウン2つでできている。値は timePicker.ts の readTime で読む。
+ * 開始(start)の data-minutes は「変更前の開始時刻」で、終了時刻を一緒にずらすときに使う
+ */
+function timeSelect(theme: Theme, attrs: string, minutes: number, role: "start" | "end", disabled: boolean): string {
+  const label = role === "start" ? "開始" : "終了";
+  const roleAttrs = role === "start" ? `data-time-start data-minutes="${minutes}"` : "data-time-end";
+  return `
+    <span ${attrs} ${roleAttrs} class="flex items-center gap-1">
+      ${upDownSelect(theme, `data-part="hour" aria-label="${label}の時"`, numberOptions(HOUR_CHOICES, Math.floor(minutes / 60)), disabled)}
+      <span>:</span>
+      ${upDownSelect(theme, `data-part="minute" aria-label="${label}の分"`, numberOptions(MINUTE_CHOICES, minutes % 60), disabled)}
+    </span>
+  `;
 }
 
 /** 色付きの枠で囲んだパネル（見出し＋説明＋中身） */
@@ -85,13 +124,24 @@ function field(theme: Theme, label: string, body: string): string {
   `;
 }
 
-/** 「08:00 ~ 16:00」の入力欄 */
-function timeRange(theme: Theme, startId: string, endId: string, start: string, end: string): string {
+/**
+ * 「08:00 ~ 16:00」の入力欄。startAttrs / endAttrs はそれぞれの時刻の選択に付ける属性（id や data-key）。
+ * data-time-range で囲むと、開始と終了が組として連動する
+ */
+function timeRange(
+  theme: Theme,
+  startAttrs: string,
+  endAttrs: string,
+  start: number,
+  end: number,
+  disabled = false,
+  tildeClass = "",
+): string {
   return `
-    <div class="flex items-center gap-2">
-      <input id="${startId}" type="time" step="300" value="${start}" class="${timeFieldClass(theme)}" />
-      <span>~</span>
-      <input id="${endId}" type="time" step="300" value="${end}" class="${timeFieldClass(theme)}" />
+    <div data-time-range class="flex flex-wrap items-center gap-2">
+      ${timeSelect(theme, startAttrs, start, "start", disabled)}
+      <span class="${tildeClass}">~</span>
+      ${timeSelect(theme, endAttrs, end, "end", disabled)}
     </div>
   `;
 }
@@ -156,11 +206,7 @@ export function dateExclusionRow(rule: DateExclusion, index: number, disabled: b
     <div data-index="${index}" class="flex flex-wrap items-center gap-4">
       <input data-key="date" type="date" value="${rule.date}" ${off} class="${fieldClass(GREEN)} w-[262px] text-center" />
       <span>の</span>
-      <div class="flex items-center gap-2">
-        <input data-key="startMinutes" type="time" step="300" value="${minutesToTime(rule.startMinutes)}" ${off} class="${timeFieldClass(GREEN)}" />
-        <span class="text-sub">~</span>
-        <input data-key="endMinutes" type="time" step="300" value="${minutesToTime(rule.endMinutes)}" ${off} class="${timeFieldClass(GREEN)}" />
-      </div>
+      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled, "text-sub")}
       ${removeButton(removable, disabled)}
     </div>
   `;
@@ -182,11 +228,7 @@ export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disab
         ${dropdown(`data-key="weekday" ${off}`, weekdays)}
       </div>
       <span>の</span>
-      <div class="flex items-center gap-2">
-        <input data-key="startMinutes" type="time" step="300" value="${minutesToTime(rule.startMinutes)}" ${off} class="${timeFieldClass(GREEN)}" />
-        <span>~</span>
-        <input data-key="endMinutes" type="time" step="300" value="${minutesToTime(rule.endMinutes)}" ${off} class="${timeFieldClass(GREEN)}" />
-      </div>
+      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled)}
       ${removeButton(removable, disabled)}
     </div>
   `;
@@ -248,7 +290,7 @@ export function renderLayout(root: HTMLElement): void {
                 ).join("")}
               </div>`,
             )}
-            ${field(BLUE, "時刻の範囲", timeRange(BLUE, "day-start", "day-end", "08:00", "16:00"))}
+            ${field(BLUE, "時刻の範囲", timeRange(BLUE, `id="day-start"`, `id="day-end"`, 8 * 60, 16 * 60))}
             ${field(
               BLUE,
               "所要時間",

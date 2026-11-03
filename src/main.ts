@@ -1,11 +1,12 @@
 // 画面の部品を取得し、データ(state)をもとに描画し、ユーザー操作に反応する。
 
 import "./style.css";
-import { formatWithTemplate, timeToMinutes } from "./format";
+import { formatWithTemplate } from "./format";
 import { parseIcs } from "./ics";
 import { dateExclusionRow, renderLayout, weekdayExclusionRow } from "./layout";
 import { fetchEvents } from "./mockCalendar";
 import { exclusionSlots, findFreeSlots } from "./slots";
+import { readTime, setUpTimePickers } from "./timePicker";
 import type { CalendarEvent, DateExclusion, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
 // ---------- 画面の部品を取得 ----------
@@ -21,6 +22,7 @@ function getElement<T extends HTMLElement>(selector: string): T {
 
 // 先にページの骨組みを作らないと、下の getElement で部品が見つからない
 renderLayout(getElement<HTMLDivElement>("#app"));
+setUpTimePickers(getElement<HTMLDivElement>("#app"));
 
 // いまのスケジュール
 const calendarDrop = getElement<HTMLLabelElement>("#calendar-drop");
@@ -37,8 +39,8 @@ const addWeekdayExclusionButton = getElement<HTMLButtonElement>("#add-weekday-ex
 
 // 日程の条件
 const weekdayButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-weekday]")];
-const dayStartInput = getElement<HTMLInputElement>("#day-start");
-const dayEndInput = getElement<HTMLInputElement>("#day-end");
+const dayStartInput = getElement<HTMLSpanElement>("#day-start");
+const dayEndInput = getElement<HTMLSpanElement>("#day-end");
 const durationHoursInput = getElement<HTMLInputElement>("#duration-hours");
 const durationMinutesInput = getElement<HTMLInputElement>("#duration-minutes");
 const daysAheadSelect = getElement<HTMLSelectElement>("#days-ahead");
@@ -80,8 +82,8 @@ function readOptions(): SearchOptions {
   return {
     durationMinutes: Number(durationHoursInput.value) * 60 + Number(durationMinutesInput.value),
     daysAhead: Number(daysAheadSelect.value),
-    dayStartMinutes: timeToMinutes(dayStartInput.value),
-    dayEndMinutes: timeToMinutes(dayEndInput.value),
+    dayStartMinutes: readTime(dayStartInput),
+    dayEndMinutes: readTime(dayEndInput),
     excludedWeekdays: allWeekdays.filter((day) => !state.includedWeekdays.has(day)),
   };
 }
@@ -227,31 +229,36 @@ setUpExclusionList(
 );
 
 // 入力が変わったら state の該当する行を書き換える（再描画はしないので入力中のフォーカスは外れない）
+// 開始時刻は「時」「分」のプルダウンの外側に data-key があるので、closest で外側までたどって探す
 dateExclusionList.addEventListener("change", (event) => {
-  const input = event.target as HTMLInputElement;
-  const rule = state.dateExclusions[rowIndexOf(input)];
-  if (!rule) return;
-  if (input.dataset.key === "date") {
-    rule.date = input.value;
-  } else if (input.dataset.key === "startMinutes" || input.dataset.key === "endMinutes") {
-    rule[input.dataset.key] = timeToMinutes(input.value);
+  const keyed = (event.target as HTMLElement).closest<HTMLElement>("[data-key]");
+  const rule = state.dateExclusions[rowIndexOf(event.target as HTMLElement)];
+  if (!keyed || !rule) return;
+  switch (keyed.dataset.key) {
+    case "date":
+      rule.date = (keyed as HTMLInputElement).value;
+      break;
+    case "startMinutes":
+    case "endMinutes":
+      rule[keyed.dataset.key] = readTime(keyed);
+      break;
   }
 });
 
 weekdayExclusionList.addEventListener("change", (event) => {
-  const input = event.target as HTMLInputElement | HTMLSelectElement;
-  const rule = state.weekdayExclusions[rowIndexOf(input)];
-  if (!rule) return;
-  switch (input.dataset.key) {
+  const keyed = (event.target as HTMLElement).closest<HTMLElement>("[data-key]");
+  const rule = state.weekdayExclusions[rowIndexOf(event.target as HTMLElement)];
+  if (!keyed || !rule) return;
+  switch (keyed.dataset.key) {
     case "recurrence":
-      rule.recurrence = input.value as Recurrence;
+      rule.recurrence = (keyed as HTMLSelectElement).value as Recurrence;
       break;
     case "weekday":
-      rule.weekday = Number(input.value);
+      rule.weekday = Number((keyed as HTMLSelectElement).value);
       break;
     case "startMinutes":
     case "endMinutes":
-      rule[input.dataset.key] = timeToMinutes(input.value);
+      rule[keyed.dataset.key] = readTime(keyed);
       break;
   }
 });
