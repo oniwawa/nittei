@@ -54,8 +54,8 @@ const addWeekdayExclusionButton = getElement<HTMLButtonElement>("#add-weekday-ex
 const weekdayButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-weekday]")];
 const dayStartInput = getElement<HTMLSpanElement>("#day-start");
 const dayEndInput = getElement<HTMLSpanElement>("#day-end");
-const durationHoursInput = getElement<HTMLInputElement>("#duration-hours");
-const durationMinutesInput = getElement<HTMLInputElement>("#duration-minutes");
+const durationHoursSelect = getElement<HTMLSelectElement>("#duration-hours");
+const durationMinutesSelect = getElement<HTMLSelectElement>("#duration-minutes");
 const periodRangeRadio = getElement<HTMLInputElement>("#period-range");
 const periodNoneRadio = getElement<HTMLInputElement>("#period-none");
 const periodStartInput = getElement<HTMLInputElement>("#period-start");
@@ -124,7 +124,8 @@ function readPeriod(): { startOffset: number; daysAhead: number } {
 function readOptions(): SearchOptions {
   const allWeekdays = [0, 1, 2, 3, 4, 5, 6];
   return {
-    durationMinutes: Number(durationHoursInput.value) * 60 + Number(durationMinutesInput.value),
+    // 「0時間00分」だと候補を作れないので、最低15分として扱う
+    durationMinutes: Math.max(Number(durationHoursSelect.value) * 60 + Number(durationMinutesSelect.value), 15),
     ...readPeriod(),
     dayStartMinutes: readTime(dayStartInput),
     dayEndMinutes: readTime(dayEndInput),
@@ -318,11 +319,6 @@ for (const button of weekdayButtons) {
     renderWeekdays();
   });
 }
-
-// 「08」→ 入力後も「08」のように2桁で表示する
-durationMinutesInput.addEventListener("change", () => {
-  durationMinutesInput.value = String(Number(durationMinutesInput.value)).padStart(2, "0");
-});
 
 templateInput.addEventListener("input", renderTemplate);
 // textarea をスクロールしたら、下に重ねた色付きの文字も一緒に動かす

@@ -1,7 +1,6 @@
 // ページの骨組み(HTML)を TypeScript で組み立てる。
 // 見た目は Figma「EasyMeet」の page_interviewScheduler に合わせている。
 
-import dropdownIcon from "./assets/icon-dropdown.svg";
 import type { DateExclusion, Recurrence, WeekdayExclusion } from "./types";
 
 const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
@@ -9,6 +8,9 @@ const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 /** 時刻の「時」「分」で選べる値 */
 const HOUR_CHOICES = Array.from({ length: 24 }, (_, i) => i);
 const MINUTE_CHOICES = [0, 15, 30, 45];
+
+/** 所要時間の「時間」で選べる値（0〜8時間）。「分」は MINUTE_CHOICES で15分刻み */
+const DURATION_HOUR_CHOICES = Array.from({ length: 9 }, (_, i) => i);
 
 const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
   { value: "weekly", label: "毎週" },
@@ -30,20 +32,36 @@ interface Theme {
   field: string;
   /** パネルの枠の色 */
   frame: string;
-  /** プルダウンの上下矢印の色 */
+  /** プルダウンの下向き矢印の色 */
   arrow: string;
+  /** 入力欄にカーソルを乗せたときの背景（選べない disabled のときは変えない） */
+  hover: string;
 }
 
-const GREEN: Theme = { text: "text-sub", field: "border-main", frame: "border-frame", arrow: "bg-main" };
-const BLUE: Theme = { text: "text-sub2", field: "border-main2", frame: "border-frame2", arrow: "bg-main2" };
+const GREEN: Theme = {
+  text: "text-sub",
+  field: "border-main",
+  frame: "border-frame",
+  arrow: "bg-main",
+  hover: "enabled:hover:bg-pale",
+};
+// 紺系には Figma に薄い色が無いので、パネルの枠の色(#AFC6F0)を30%の濃さにして使う
+const BLUE: Theme = {
+  text: "text-sub2",
+  field: "border-main2",
+  frame: "border-frame2",
+  arrow: "bg-main2",
+  hover: "enabled:hover:bg-frame2/30",
+};
 
 const HEADING = "text-2xl font-semibold";
 /** 入力欄。disabled のときは Figma の「not」色（灰色）になる */
 const FIELD_BASE =
-  "rounded-[5px] border-2 bg-white px-4 py-2 text-text disabled:cursor-not-allowed disabled:border-off disabled:text-off";
+  "rounded-[5px] border-2 bg-white px-4 py-2 text-text transition-colors disabled:cursor-not-allowed disabled:border-off disabled:text-off";
 
+/** 入力欄の見た目。カーソルを乗せると背景が薄い緑/紺になる */
 function fieldClass(theme: Theme): string {
-  return `${FIELD_BASE} ${theme.field}`;
+  return `${FIELD_BASE} ${theme.field} ${theme.hover}`;
 }
 
 /** 2桁の数字の <option> を並べる（8 → "08"） */
@@ -54,7 +72,7 @@ function numberOptions(values: number[], selected: number): string {
 }
 
 /**
- * 右側に上下矢印が付いたプルダウン。
+ * 右側に下向き矢印が付いたプルダウン。
  * peer を付けた select が disabled になると、後ろの矢印も灰色になる
  */
 function upDownSelect(theme: Theme, attrs: string, optionsHtml: string, disabled: boolean): string {
@@ -63,7 +81,7 @@ function upDownSelect(theme: Theme, attrs: string, optionsHtml: string, disabled
       <select ${attrs} ${disabled ? "disabled" : ""} class="peer ${fieldClass(theme)} cursor-pointer appearance-none pr-8">
         ${optionsHtml}
       </select>
-      <span aria-hidden="true" class="icon-updown pointer-events-none absolute right-3 ${theme.arrow} peer-disabled:bg-off"></span>
+      <span aria-hidden="true" class="icon-select-down pointer-events-none absolute right-3 ${theme.arrow} peer-disabled:bg-off"></span>
     </span>
   `;
 }
@@ -146,10 +164,10 @@ function exclusionRow(toggleId: string, label: string, checked: boolean, details
 function dropdown(attrs: string, choices: string, extraClass = ""): string {
   return `
     <label class="relative flex items-center ${extraClass}">
-      <select ${attrs} class="w-full cursor-pointer appearance-none bg-transparent py-2 pr-12 pl-4 text-text disabled:cursor-not-allowed disabled:text-off">
+      <select ${attrs} class="peer w-full cursor-pointer appearance-none bg-transparent py-2 pr-8 pl-4 text-text transition-colors enabled:hover:bg-pale disabled:cursor-not-allowed disabled:text-off">
         ${choices}
       </select>
-      <img src="${dropdownIcon}" alt="" class="pointer-events-none absolute right-4" />
+      <span aria-hidden="true" class="icon-select-down pointer-events-none absolute right-3 bg-main peer-disabled:bg-off"></span>
     </label>
   `;
 }
@@ -206,7 +224,7 @@ export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disab
   ).join("");
   return `
     <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <div class="flex items-center rounded-[5px] border-2 border-main bg-white has-[:disabled]:border-off">
+      <div class="flex items-center overflow-hidden rounded-[5px] border-2 border-main bg-white has-[:disabled]:border-off">
         ${dropdown(`data-key="recurrence" ${off}`, recurrences, "border-r-[3px] border-dashed border-off")}
         ${dropdown(`data-key="weekday" ${off}`, weekdays)}
       </div>
@@ -267,7 +285,7 @@ export function renderLayout(root: HTMLElement): void {
                 ${WEEKDAY_NAMES.map(
                   (name, i) => `
                   <button type="button" data-weekday="${i}" aria-pressed="false"
-                    class="w-[76px] cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white">
+                    class="w-[76px] cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white">
                     ${name}
                   </button>`,
                 ).join("")}
@@ -279,11 +297,16 @@ export function renderLayout(root: HTMLElement): void {
               "所要時間",
               `<div class="flex items-center gap-4">
                 <label class="flex items-center gap-2">
-                  <input id="duration-hours" type="number" min="0" max="12" value="1" class="${fieldClass(BLUE)} w-[60px] text-right" />
+                  ${upDownSelect(
+                    BLUE,
+                    `id="duration-hours"`,
+                    DURATION_HOUR_CHOICES.map((h) => `<option value="${h}" ${h === 1 ? "selected" : ""}>${h}</option>`).join(""),
+                    false,
+                  )}
                   時間
                 </label>
                 <label class="flex items-center gap-2">
-                  <input id="duration-minutes" type="number" min="0" max="55" step="5" value="00" class="${fieldClass(BLUE)} w-[64px] text-right" />
+                  ${upDownSelect(BLUE, `id="duration-minutes"`, numberOptions(MINUTE_CHOICES, 0), false)}
                   分
                 </label>
               </div>`,
@@ -321,7 +344,7 @@ export function renderLayout(root: HTMLElement): void {
           `<div class="flex flex-col gap-4">
             <h4 class="font-semibold text-sub2">出力文章の形式を入力</h4>
             <!-- {} だけ色を変えるため、透明な文字の textarea の下に色付きの同じ文字を重ねている -->
-            <div class="relative">
+            <div class="relative rounded-[5px] transition-colors hover:bg-frame2/30">
               <div id="template-highlight" aria-hidden="true"
                 class="pointer-events-none absolute inset-0 overflow-hidden border-2 border-transparent px-4 py-2 break-words whitespace-pre-wrap"></div>
               <textarea id="output-template" spellcheck="false"

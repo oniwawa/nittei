@@ -37,12 +37,12 @@
     background: white;
     cursor: pointer;
   }
-  /* プルダウンの上下矢印。画像の形で切り抜き(mask)、色は bg-* クラスで塗る。
+  /* プルダウンの下向き矢印。画像の形で切り抜き(mask)、色は bg-* クラスで塗る。
      こうすると緑・紺・灰色(選べないとき)を1つの画像で出し分けられる */
-  .icon-updown {
+  .icon-select-down {
     width: 10px;
-    height: 14px;
-    mask: url("./assets/icon-updown.svg") center / contain no-repeat;
+    height: 7px;
+    mask: url("./assets/icon-select-down.svg") center / contain no-repeat;
   }
   /* Figma のラジオボタン。未選択は紺の丸枠だけ、選択中は Figma から書き出した画像 */
   .radio {
