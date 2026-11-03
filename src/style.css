@@ -15,6 +15,8 @@
   --color-main2: #7b85c2;
   --color-frame2: #afc6f0; /* third2 */
   --color-text: #0c0c13;
+  /* 選ばれていない選択肢の文字（Figma で名前の付いていない色） */
+  --color-hint: #9d9d9d;
 
   --font-sans: "Noto Sans JP", sans-serif;
 
@@ -41,6 +43,21 @@
     width: 10px;
     height: 14px;
     mask: url("./assets/icon-updown.svg") center / contain no-repeat;
+  }
+  /* Figma のラジオボタン。未選択は紺の丸枠だけ、選択中は Figma から書き出した画像 */
+  .radio {
+    appearance: none;
+    flex-shrink: 0;
+    width: 1.5em;
+    height: 1.5em;
+    border: 3px solid var(--color-sub2);
+    border-radius: 9999px;
+    background: white;
+    cursor: pointer;
+  }
+  .radio:checked {
+    border: none;
+    background: url("./assets/radio-checked.svg") center / 100% 100% no-repeat;
   }
   .checkbox:checked {
     border: none;

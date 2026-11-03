@@ -24,6 +24,19 @@ function getElement<T extends HTMLElement>(selector: string): T {
 renderLayout(getElement<HTMLDivElement>("#app"));
 setUpTimePickers(getElement<HTMLDivElement>("#app"));
 
+// 年月日の入力欄は、標準ではカレンダーのアイコンを押したときしかカレンダーが開かない。
+// 欄のどこをクリックしても開くよう、showPicker() で開く。
+// 後から増える行（日付の除外）にも効くよう、#app でまとめて受け取る
+getElement<HTMLDivElement>("#app").addEventListener("click", (event) => {
+  const input = event.target as HTMLElement;
+  if (!(input instanceof HTMLInputElement) || input.type !== "date" || input.disabled) return;
+  try {
+    input.showPicker();
+  } catch {
+    // showPicker に対応していない古いブラウザでは、これまでどおりアイコンから開く
+  }
+});
+
 // いまのスケジュール
 const calendarDrop = getElement<HTMLLabelElement>("#calendar-drop");
 const calendarFile = getElement<HTMLInputElement>("#calendar-file");
@@ -43,7 +56,10 @@ const dayStartInput = getElement<HTMLSpanElement>("#day-start");
 const dayEndInput = getElement<HTMLSpanElement>("#day-end");
 const durationHoursInput = getElement<HTMLInputElement>("#duration-hours");
 const durationMinutesInput = getElement<HTMLInputElement>("#duration-minutes");
-const daysAheadSelect = getElement<HTMLSelectElement>("#days-ahead");
+const periodRangeRadio = getElement<HTMLInputElement>("#period-range");
+const periodNoneRadio = getElement<HTMLInputElement>("#period-none");
+const periodStartInput = getElement<HTMLInputElement>("#period-start");
+const periodWeeksInput = getElement<HTMLInputElement>("#period-weeks");
 
 // 出力文章の形式
 const templateInput = getElement<HTMLTextAreaElement>("#output-template");
@@ -77,11 +93,39 @@ const state: AppState = {
   weekdayExclusions: [newWeekdayExclusion()],
 };
 
+/** Date → <input type="date"> 用の "2026-11-20" */
+function toDateValue(date: Date): string {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * 「期間を指定しない」のときに探す日数。上限なしだと候補が増えすぎて重くなるので、
+ * 明日から最大でこの日数分までを計算する
+ */
+const UNLIMITED_DAYS = 60;
+
+/** 「提案する期間」から、探し始める日（今日から何日後か）と日数を読む */
+function readPeriod(): { startOffset: number; daysAhead: number } {
+  if (!periodRangeRadio.checked) return { startOffset: 1, daysAhead: UNLIMITED_DAYS };
+
+  // 開始日から〇週間: 今日から開始日まで何日あるかを数える。未入力や今日以前なら明日から
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [year, month, date] = periodStartInput.value.split("-").map(Number);
+  const start = new Date(year, month - 1, date);
+  const offset = Math.round((start.getTime() - today.getTime()) / (24 * 60 * 60_000)); // 夏時間のずれを丸めで吸収
+  // 「〇週間」は 1〜8 の範囲に収める（空欄や範囲外の入力に備える）
+  const weeks = Math.min(Math.max(Math.round(Number(periodWeeksInput.value)) || 1, 1), 8);
+  return { startOffset: Number.isNaN(offset) ? 1 : Math.max(offset, 1), daysAhead: weeks * 7 };
+}
+
 function readOptions(): SearchOptions {
   const allWeekdays = [0, 1, 2, 3, 4, 5, 6];
   return {
     durationMinutes: Number(durationHoursInput.value) * 60 + Number(durationMinutesInput.value),
-    daysAhead: Number(daysAheadSelect.value),
+    ...readPeriod(),
     dayStartMinutes: readTime(dayStartInput),
     dayEndMinutes: readTime(dayEndInput),
     excludedWeekdays: allWeekdays.filter((day) => !state.includedWeekdays.has(day)),
@@ -100,7 +144,7 @@ function activeExclusions(): { dates: DateExclusion[]; weekdays: WeekdayExclusio
 function computeSlots(): TimeSlot[] {
   const options = readOptions();
   const { dates, weekdays } = activeExclusions();
-  const busy = [...state.events, ...exclusionSlots(dates, weekdays, options.daysAhead)];
+  const busy = [...state.events, ...exclusionSlots(dates, weekdays, options.startOffset, options.daysAhead)];
   return findFreeSlots(busy, options);
 }
 
@@ -294,7 +338,21 @@ exportButton.addEventListener("click", () => {
 
 // ---------- 起動 ----------
 
+/** 「期間を指定しない」を選んでいる間は、開始日と「〇週間」の入力欄を選べなくする（灰色になる） */
+function renderPeriod(): void {
+  periodStartInput.disabled = periodWeeksInput.disabled = !periodRangeRadio.checked;
+}
+
+periodRangeRadio.addEventListener("change", renderPeriod);
+periodNoneRadio.addEventListener("change", renderPeriod);
+
 async function init(): Promise<void> {
+  // 開始日は明日以降だけ選べるようにし、最初は明日を入れておく
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  periodStartInput.min = periodStartInput.value = toDateValue(tomorrow);
+  renderPeriod();
+
   // .ics を読み込むまではモックの予定を使う
   state.events = await fetchEvents();
   renderCalendarStatus();

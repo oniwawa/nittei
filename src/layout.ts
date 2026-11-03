@@ -4,17 +4,6 @@
 import dropdownIcon from "./assets/icon-dropdown.svg";
 import type { DateExclusion, Recurrence, WeekdayExclusion } from "./types";
 
-/** <select> の選択肢1つ分 */
-interface Choice {
-  value: number;
-  label: string;
-}
-
-const DAYS_AHEAD_CHOICES: Choice[] = [
-  { value: 7, label: "今後1週間" },
-  { value: 14, label: "今後2週間" },
-];
-
 const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
 /** 時刻の「時」「分」で選べる値 */
@@ -27,12 +16,6 @@ const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
   { value: "biweeklyFromNextWeek", label: "隔週(来週〜)" },
 ];
 
-/** 選択肢の配列から <option> タグの文字列を作る */
-function options(choices: Choice[], selected: number): string {
-  return choices
-    .map((c) => `<option value="${c.value}" ${c.value === selected ? "selected" : ""}>${c.label}</option>`)
-    .join("");
-}
 
 // ---------- 共通の見た目 ----------
 
@@ -193,7 +176,7 @@ function removeButton(removable: boolean, disabled: boolean): string {
   if (!removable) return `<span class="size-8 shrink-0" aria-hidden="true"></span>`;
   return `
     <button type="button" data-action="remove" aria-label="この条件を削除" title="この条件を削除" ${disabled ? "disabled" : ""}
-      class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-off transition-colors hover:bg-white hover:text-sub disabled:pointer-events-none">
+      class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-main transition-colors hover:bg-main hover:text-white disabled:pointer-events-none">
       ×
     </button>
   `;
@@ -204,7 +187,7 @@ export function dateExclusionRow(rule: DateExclusion, index: number, disabled: b
   const off = disabled ? "disabled" : "";
   return `
     <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <input data-key="date" type="date" value="${rule.date}" ${off} class="${fieldClass(GREEN)} w-[262px] text-center" />
+      <input data-key="date" type="date" value="${rule.date}" ${off} class="${fieldClass(GREEN)} w-[262px] cursor-pointer text-center" />
       <span>の</span>
       ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled, "text-sub")}
       ${removeButton(removable, disabled)}
@@ -307,8 +290,23 @@ export function renderLayout(root: HTMLElement): void {
             )}
             ${field(
               BLUE,
-              "期間",
-              `<div><select id="days-ahead" class="${fieldClass(BLUE)} cursor-pointer">${options(DAYS_AHEAD_CHOICES, 7)}</select></div>`,
+              "提案する期間",
+              `<div class="flex flex-col gap-4">
+                <!-- 期間を指定する: 開始日から〇週間。選ばれていないときは入力欄を灰色にする（main.ts の renderPeriod） -->
+                <div class="flex flex-wrap items-center gap-4">
+                  <input id="period-range" type="radio" name="period" value="range" checked aria-label="期間を指定する" class="radio" />
+                  <input id="period-start" type="date" aria-label="開始日" class="${fieldClass(BLUE)} w-[262px] cursor-pointer text-center" />
+                  <label class="flex items-center gap-2">
+                    から
+                    <input id="period-weeks" type="number" min="1" max="8" value="1" aria-label="週間" class="${fieldClass(BLUE)} w-[72px] text-right" />
+                    週間
+                  </label>
+                </div>
+                <label class="flex cursor-pointer items-center gap-4">
+                  <input id="period-none" type="radio" name="period" value="none" class="radio peer" />
+                  <span class="text-hint peer-checked:text-text">期間を指定しない</span>
+                </label>
+              </div>`,
             )}
           </div>`,
         )}

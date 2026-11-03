@@ -17,7 +17,9 @@ export interface TimeSlot {
 
 /** 空き時間を探すときの条件 */
 export interface SearchOptions {
-  /** 何日先まで探すか */
+  /** 今日から何日後の日から探し始めるか（明日なら 1） */
+  startOffset: number;
+  /** 何日分探すか */
   daysAhead: number;
   /** 面談1回の長さ（分） */
   durationMinutes: number;

@@ -17,10 +17,10 @@ function atMinutes(day: Date, minutes: number): Date {
   return date;
 }
 
-/** 明日から daysAhead 日後までの日付を1日ずつ返す */
-function upcomingDays(daysAhead: number, now: Date): Date[] {
+/** 今日から startOffset 日後の日から、count 日分の日付を1日ずつ返す */
+function upcomingDays(startOffset: number, count: number, now: Date): Date[] {
   const days: Date[] = [];
-  for (let i = 1; i <= daysAhead; i++) {
+  for (let i = startOffset; i < startOffset + count; i++) {
     const day = new Date(now);
     day.setDate(day.getDate() + i);
     days.push(day);
@@ -68,6 +68,7 @@ function isExcludedDay(weekday: number, excludedWeekdays: number[]): boolean {
 export function exclusionSlots(
   dateExclusions: DateExclusion[],
   weekdayExclusions: WeekdayExclusion[],
+  startOffset: number,
   daysAhead: number,
   now: Date = new Date(),
 ): TimeSlot[] {
@@ -80,7 +81,7 @@ export function exclusionSlots(
     slots.push({ start: atMinutes(day, rule.startMinutes), end: atMinutes(day, rule.endMinutes) });
   }
 
-  for (const day of upcomingDays(daysAhead, now)) {
+  for (const day of upcomingDays(startOffset, daysAhead, now)) {
     for (const rule of weekdayExclusions) {
       if (!matchesRecurrence(rule, day, now)) continue;
       slots.push({ start: atMinutes(day, rule.startMinutes), end: atMinutes(day, rule.endMinutes) });
@@ -97,8 +98,8 @@ export function findFreeSlots(
 ): TimeSlot[] {
   const slots: TimeSlot[] = [];
 
-  // 明日から daysAhead 日後まで、1日ずつ調べる
-  for (const day of upcomingDays(options.daysAhead, now)) {
+  // startOffset 日後から daysAhead 日分、1日ずつ調べる
+  for (const day of upcomingDays(options.startOffset, options.daysAhead, now)) {
     if (isExcludedDay(day.getDay(), options.excludedWeekdays)) continue;
 
     const dayEnd = atMinutes(day, options.dayEndMinutes);
