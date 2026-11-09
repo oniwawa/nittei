@@ -332,8 +332,41 @@ function resultView(): string {
 
 // ---------- ページ全体 ----------
 
+/** 全ページ共通の上の帯。アプリ名と一言の説明（Google の審査でも、トップページにアプリの説明が求められる） */
+function siteHeader(): string {
+  return `
+    <header class="border-b-2 border-frame2 bg-white">
+      <div class="mx-auto flex max-w-[1075px] flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-4">
+        <h1 class="text-2xl font-semibold text-sub2">にっていじ</h1>
+        <p class="text-sm">就活の面接日程を、カレンダーの空き時間からかんたんに提案</p>
+      </div>
+    </header>
+  `;
+}
+
+/** 全ページ共通の下の帯。Google のデータの扱いの説明と、ポリシーへのリンク（審査で必要） */
+function siteFooter(): string {
+  return `
+    <footer class="border-t-2 border-frame2 bg-white">
+      <div class="mx-auto flex max-w-[1075px] flex-col gap-3 px-4 py-6 text-sm">
+        <p>
+          にっていじは、Googleカレンダーの「予定が入っている時間帯」だけを読み込み、面接日程の候補を作るアプリです。
+          予定の名前・場所・参加者などは読み込まず、読み込んだ情報はブラウザの中だけで使い、保存しません。
+        </p>
+        <nav class="flex flex-wrap gap-6">
+          <a href="/privacy.html" class="text-sub2 underline hover:text-blue-950">プライバシーポリシー</a>
+          <a href="/terms.html" class="text-sub2 underline hover:text-blue-950">利用規約</a>
+        </nav>
+        <p class="text-hint">© 2026 にっていじ</p>
+      </div>
+    </footer>
+  `;
+}
+
 export function renderLayout(root: HTMLElement): void {
   root.innerHTML = `
+    ${siteHeader()}
+
     <main id="form-view" class="${PAGE}">
 
       <section class="flex w-full flex-col gap-8">
@@ -466,6 +499,8 @@ export function renderLayout(root: HTMLElement): void {
     </main>
 
     ${resultView()}
+
+    ${siteFooter()}
 
     <!-- 画面上部に数秒だけ出る通知（main.ts の showToast） -->
     <div id="toast" role="alert" hidden
