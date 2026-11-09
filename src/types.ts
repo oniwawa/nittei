@@ -1,14 +1,6 @@
 // アプリ全体で使う「データの形」を定義するファイル。
 // interface は「このオブジェクトはこういうプロパティを持つ」という約束事。
 
-/** カレンダー上の1つの予定 */
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-}
-
 /** 開始〜終了の時間帯（空き時間の候補など） */
 export interface TimeSlot {
   start: Date;
