@@ -1,2 +1,5 @@
 node_modules
 dist
+
+# 環境変数（Google のクライアントIDなど）
+.env.local

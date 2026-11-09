@@ -2,7 +2,6 @@
 
 import "./style.css";
 import { formatDate, formatTime, formatWithTemplate, minutesToTime } from "./format";
-import { parseIcs } from "./ics";
 import {
   CANDIDATE_BUTTON,
   dateExclusionRow,
@@ -13,10 +12,10 @@ import {
   WEEKDAY_NAMES,
   weekdayExclusionRow,
 } from "./layout";
-import { fetchEvents } from "./mockCalendar";
+import { connectGoogle, disconnectGoogle, fetchGoogleBusy, isConfigured, isConnected, loadGoogleScript } from "./google";
 import { exclusionSlots, findFreeSlots, upcomingDays } from "./slots";
 import { readTime, setUpTimePickers } from "./timePicker";
-import type { CalendarEvent, DateExclusion, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
+import type { DateExclusion, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
 // ---------- 画面の部品を取得 ----------
 
@@ -47,9 +46,9 @@ getElement<HTMLDivElement>("#app").addEventListener("click", (event) => {
 });
 
 // いまのスケジュール
-const calendarDrop = getElement<HTMLLabelElement>("#calendar-drop");
-const calendarFile = getElement<HTMLInputElement>("#calendar-file");
-const calendarDropText = getElement<HTMLSpanElement>("#calendar-drop-text");
+const calendarConnectButton = getElement<HTMLButtonElement>("#calendar-connect");
+const calendarStatus = getElement<HTMLSpanElement>("#calendar-status");
+const calendarDisconnectButton = getElement<HTMLButtonElement>("#calendar-disconnect");
 
 // 指定した日程を除外
 const dateExclusionToggle = getElement<HTMLInputElement>("#date-exclusion-toggle");
@@ -93,7 +92,8 @@ const backButton = getElement<HTMLButtonElement>("#back-button");
 // ---------- アプリの状態(state) ----------
 
 interface AppState {
-  events: CalendarEvent[];
+  /** Google カレンダーで予定が入っている時間帯（未連携なら空）。予定の名前は受け取らない */
+  busy: TimeSlot[];
   /** 候補にする曜日（Figma の初期表示に合わせて月〜金） */
   includedWeekdays: Set<number>;
   dateExclusions: DateExclusion[];
@@ -131,7 +131,7 @@ const newWeekdayExclusion = (): WeekdayExclusion => ({
 });
 
 const state: AppState = {
-  events: [],
+  busy: [],
   includedWeekdays: new Set([1, 2, 3, 4, 5]),
   dateExclusions: [newDateExclusion()],
   weekdayExclusions: [newWeekdayExclusion()],
@@ -198,16 +198,18 @@ function activeExclusions(): { dates: DateExclusion[]; weekdays: WeekdayExclusio
 function computeSlots(): TimeSlot[] {
   const options = readOptions();
   const { dates, weekdays } = activeExclusions();
-  const busy = [...state.events, ...exclusionSlots(dates, weekdays, options.startOffset, options.daysAhead)];
+  const busy = [...state.busy, ...exclusionSlots(dates, weekdays, options.startOffset, options.daysAhead)];
   return findFreeSlots(busy, options);
 }
 
 // ---------- 描画 ----------
 
-function renderCalendarStatus(fileName?: string): void {
-  calendarDropText.textContent = fileName
-    ? `${fileName} から ${state.events.length}件の予定を読み込みました`
-    : "カレンダー情報をドロップ";
+function renderCalendarStatus(calendarCount?: number): void {
+  calendarStatus.textContent =
+    calendarCount === undefined
+      ? "Googleカレンダーと連携"
+      : `連携中：${calendarCount}個のカレンダー（押すと連携し直します）`;
+  calendarDisconnectButton.hidden = calendarCount === undefined;
 }
 
 function renderDateExclusions(): void {
@@ -255,34 +257,23 @@ function renderTemplate(): void {
 
 // ---------- ユーザー操作 ----------
 
-async function loadIcsFile(file: File): Promise<void> {
-  const events = parseIcs(await file.text());
-  if (events.length === 0) {
-    calendarDropText.textContent = `${file.name} から予定を読み込めませんでした`;
-    return;
+calendarConnectButton.addEventListener("click", async () => {
+  calendarConnectButton.disabled = true;
+  calendarStatus.textContent = "Googleカレンダーと連携中…";
+  try {
+    renderCalendarStatus(await connectGoogle());
+  } catch (error) {
+    renderCalendarStatus();
+    showToast(error instanceof Error ? error.message : "Googleカレンダーと連携できませんでした");
+  } finally {
+    calendarConnectButton.disabled = false;
   }
-  state.events = events;
-  renderCalendarStatus(file.name);
-}
-
-calendarFile.addEventListener("change", () => {
-  const file = calendarFile.files?.[0];
-  if (file) loadIcsFile(file);
 });
 
-// ドラッグ中は枠を光らせる。dragover で preventDefault しないと drop が発生しない
-calendarDrop.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  calendarDrop.dataset.dragging = "";
-});
-calendarDrop.addEventListener("dragleave", () => {
-  delete calendarDrop.dataset.dragging;
-});
-calendarDrop.addEventListener("drop", (event) => {
-  event.preventDefault();
-  delete calendarDrop.dataset.dragging;
-  const file = event.dataTransfer?.files[0];
-  if (file) loadIcsFile(file);
+calendarDisconnectButton.addEventListener("click", () => {
+  disconnectGoogle();
+  state.busy = [];
+  renderCalendarStatus();
 });
 
 /** 入力欄が属している行の番号（data-index）。行の外なら -1 */
@@ -422,7 +413,7 @@ getElement<HTMLDivElement>("#app").addEventListener("change", (event) => {
   if (input.getAttribute("aria-invalid") === "true" && input.value) input.removeAttribute("aria-invalid");
 });
 
-exportButton.addEventListener("click", () => {
+exportButton.addEventListener("click", async () => {
   const missing = findMissingInputs();
   if (missing.length > 0) {
     for (const input of missing) input.setAttribute("aria-invalid", "true");
@@ -431,6 +422,27 @@ exportButton.addEventListener("click", () => {
     missing[0].scrollIntoView({ behavior: "smooth", block: "center" });
     missing[0].focus({ preventScroll: true });
     return;
+  }
+
+  // 連携中なら、提案する期間の分だけ Google カレンダーの予定を読み込み直す
+  if (isConnected()) {
+    const options = readOptions();
+    const days = upcomingDays(options.startOffset, options.daysAhead);
+    const from = new Date(days[0]);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(days[days.length - 1]);
+    to.setHours(24, 0, 0, 0);
+    exportButton.disabled = true;
+    try {
+      state.busy = await fetchGoogleBusy(from, to);
+    } catch (error) {
+      // 期限切れなどで読み込めないときは出力しない（予定が無いものとして候補を出すと危ないため）
+      renderCalendarStatus();
+      showToast(error instanceof Error ? error.message : "Googleカレンダーを読み込めませんでした");
+      return;
+    } finally {
+      exportButton.disabled = false;
+    }
   }
 
   const slots = computeSlots();
@@ -460,13 +472,13 @@ function showView(view: "form" | "result"): void {
   window.scrollTo({ top: 0 });
 }
 
-/** date と同じ日（0:00〜24:00）に少しでもかかっているカレンダーの予定 */
-function eventsOn(date: Date): CalendarEvent[] {
+/** date と同じ日（0:00〜24:00）に少しでもかかっている、カレンダーで予定が入っている時間帯 */
+function eventsOn(date: Date): TimeSlot[] {
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
-  return state.events.filter((event) => event.start < dayEnd && event.end > dayStart);
+  return state.busy.filter((event) => event.start < dayEnd && event.end > dayStart);
 }
 
 /**
@@ -485,8 +497,11 @@ function otherEventsButton(day: string, count: number, expanded: boolean, listId
   return button;
 }
 
-/** その日の予定を「10:00〜12:00 ゼミ」のように並べた一覧。日をまたぐ予定はその日の分だけ表示する */
-function otherEventsList(events: CalendarEvent[], date: Date, listId: string): HTMLUListElement {
+/**
+ * その日の予定を「10:00〜12:00 予定あり」のように並べた一覧。日をまたぐ予定はその日の分だけ表示する。
+ * Google からは予定の名前を受け取らないので、何の予定かは出さない
+ */
+function otherEventsList(events: TimeSlot[], date: Date, listId: string): HTMLUListElement {
   const dayStart = new Date(date);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
@@ -500,8 +515,7 @@ function otherEventsList(events: CalendarEvent[], date: Date, listId: string): H
     const start = event.start < dayStart ? "0:00" : formatTime(event.start);
     const end = event.end > dayEnd ? "24:00" : formatTime(event.end);
     const item = document.createElement("li");
-    // 予定の名前は外部(.ics)から来るので、textContent で文字として入れる
-    item.textContent = `${allDay ? "終日" : `${start}〜${end}`}　${event.title}`;
+    item.textContent = `${allDay ? "終日" : `${start}〜${end}`}　予定あり`;
     list.append(item);
   }
   return list;
@@ -852,7 +866,7 @@ function renderTimeline(): void {
       block.className = TIMELINE_EVENT;
       block.style.top = `${top}px`;
       block.style.height = `${height}px`;
-      block.textContent = event.title; // 外部(.ics)の文字なので textContent で入れる
+      block.textContent = "予定あり";
       body.append(block);
     }
 
@@ -925,9 +939,14 @@ async function init(): Promise<void> {
   periodStartInput.min = periodStartInput.value = toDateValue(tomorrow);
   renderPeriod();
 
-  // .ics を読み込むまではモックの予定を使う
-  state.events = await fetchEvents();
+  // ポップアップがブロックされないよう、ボタンが押される前に Google のスクリプトを読み込んでおく
   renderCalendarStatus();
+  if (isConfigured) {
+    loadGoogleScript().catch((error: Error) => showToast(error.message));
+  } else {
+    calendarStatus.textContent = "Googleカレンダー連携は未設定です（.env.local に VITE_GOOGLE_CLIENT_ID を設定）";
+    calendarConnectButton.disabled = true;
+  }
   renderDateExclusions();
   renderWeekdayExclusions();
   renderWeekdays();

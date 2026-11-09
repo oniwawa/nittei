@@ -339,10 +339,16 @@ export function renderLayout(root: HTMLElement): void {
       <section class="flex w-full flex-col gap-8">
         <h2 class="${HEADING} text-sub">今のスケジュール</h2>
 
-        <label id="calendar-drop" class="flex cursor-pointer items-center justify-center rounded-[15px] bg-sub px-[59px] py-4 text-center font-semibold text-white shadow-button ring-frame data-[dragging]:ring-4">
-          <input id="calendar-file" type="file" accept=".ics,text/calendar" class="sr-only" />
-          <span id="calendar-drop-text">カレンダー情報をドロップ</span>
-        </label>
+        <div class="flex w-full flex-col items-center gap-2">
+          <button id="calendar-connect" type="button"
+            class="w-full cursor-pointer rounded-[15px] bg-sub px-[59px] py-4 text-center font-semibold text-white shadow-button transition-colors hover:bg-green-900 disabled:cursor-wait disabled:opacity-70">
+            <span id="calendar-status">Googleカレンダーと連携</span>
+          </button>
+          <p class="text-sm">
+            予定の名前や場所は読み込まず、予定が入っている時間帯だけを使います
+            <button id="calendar-disconnect" type="button" hidden class="ml-2 cursor-pointer text-sub underline">連携を解除</button>
+          </p>
+        </div>
 
         ${panel(
           GREEN,
