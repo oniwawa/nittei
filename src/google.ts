@@ -136,7 +136,13 @@ async function callApi<T>(path: string, init: RequestInit = {}): Promise<T> {
     accessToken = null; // 期限切れ（1時間）なので、次は許可をもらい直す
     throw new Error("Google の連携が切れました。「Googleカレンダーと連携」をもう一度押してください");
   }
-  if (!response.ok) throw new Error(`Google カレンダーの読み込みに失敗しました（${response.status}）`);
+  if (!response.ok) {
+    // Google が返す理由（例: "Google Calendar API has not been used in project ..."）も表示して、原因を探しやすくする
+    const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    const reason = body?.error?.message;
+    console.error("Google Calendar API のエラー", response.status, body);
+    throw new Error(`Google カレンダーの読み込みに失敗しました（${response.status}${reason ? `: ${reason}` : ""}）`);
+  }
   return response.json() as Promise<T>;
 }
 
