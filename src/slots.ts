@@ -3,12 +3,8 @@
 
 import type { DateExclusion, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
-/** 候補の開始時刻を何分刻みでずらすか */
-const STEP_MINUTES = 30;
-
-function addMinutes(date: Date, minutes: number): Date {
-  return new Date(date.getTime() + minutes * 60_000);
-}
+/** 候補の区切りを何分単位にそろえるか（予定が 10:10 に終わるなら 10:15 から空きとみなす） */
+const ROUND_MINUTES = 15;
 
 /** day と同じ日の 0:00 から minutes 分後の Date を作る */
 function atMinutes(day: Date, minutes: number): Date {
@@ -18,7 +14,7 @@ function atMinutes(day: Date, minutes: number): Date {
 }
 
 /** 今日から startOffset 日後の日から、count 日分の日付を1日ずつ返す */
-function upcomingDays(startOffset: number, count: number, now: Date): Date[] {
+export function upcomingDays(startOffset: number, count: number, now: Date = new Date()): Date[] {
   const days: Date[] = [];
   for (let i = startOffset; i < startOffset + count; i++) {
     const day = new Date(now);
@@ -91,6 +87,15 @@ export function exclusionSlots(
   return slots;
 }
 
+/** day の 0:00 から date まで何分あるか */
+function minutesOfDay(day: Date, date: Date): number {
+  return (date.getTime() - atMinutes(day, 0).getTime()) / 60_000;
+}
+
+/**
+ * 空いている時間を、つながっている分はひとかたまりの候補として返す。
+ * 例: 13〜17時に予定が無ければ「13:00〜17:00」で1件（所要時間より短い空きは候補にしない）
+ */
 export function findFreeSlots(
   busy: TimeSlot[],
   options: SearchOptions,
@@ -102,17 +107,33 @@ export function findFreeSlots(
   for (const day of upcomingDays(options.startOffset, options.daysAhead, now)) {
     if (isExcludedDay(day.getDay(), options.excludedWeekdays)) continue;
 
-    const dayEnd = atMinutes(day, options.dayEndMinutes);
-    let start = atMinutes(day, options.dayStartMinutes);
+    const window: TimeSlot = {
+      start: atMinutes(day, options.dayStartMinutes),
+      end: atMinutes(day, options.dayEndMinutes),
+    };
 
-    // 「開始時刻 + 所要時間」が終了時刻を超えない範囲で、30分ずつずらして候補を作る
-    while (addMinutes(start, options.durationMinutes) <= dayEnd) {
-      const candidate: TimeSlot = { start, end: addMinutes(start, options.durationMinutes) };
-      // CalendarEvent も start/end を持つので、TimeSlot として渡せる
-      const isBusy = busy.some((slot) => overlaps(candidate, slot));
-      if (!isBusy) slots.push(candidate);
-      start = addMinutes(start, STEP_MINUTES);
+    /** from〜to の空きを15分単位に内側へそろえ、所要時間以上あれば候補にする */
+    const addIfLongEnough = (from: Date, to: Date) => {
+      const start = Math.ceil(minutesOfDay(day, from) / ROUND_MINUTES) * ROUND_MINUTES;
+      const end = Math.floor(minutesOfDay(day, to) / ROUND_MINUTES) * ROUND_MINUTES;
+      if (end - start >= options.durationMinutes) {
+        slots.push({ start: atMinutes(day, start), end: atMinutes(day, end) });
+      }
+    };
+
+    // この日の「時刻の範囲」に重なる予定だけを、始まりが早い順に並べる
+    const dayBusy = busy
+      .filter((slot) => overlaps(slot, window))
+      .sort((x, y) => x.start.getTime() - y.start.getTime());
+
+    // 範囲の始まりから順に、予定と予定のすき間を拾っていく。
+    // cursor は「ここまでは埋まっている」位置。予定どうしが重なっていても後戻りしない
+    let cursor = window.start;
+    for (const slot of dayBusy) {
+      if (slot.start > cursor) addIfLongEnough(cursor, slot.start);
+      if (slot.end > cursor) cursor = slot.end;
     }
+    if (cursor < window.end) addIfLongEnough(cursor, window.end);
   }
 
   return slots;

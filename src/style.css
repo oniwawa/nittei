@@ -10,13 +10,19 @@
   --color-off: #cbcbdb; /* not */
   --color-frame: #b6f0af; /* third */
   --color-accent: #d09900;
+  /* 薄い黄色。accent の10%を白に混ぜた不透明な色（accent/10 と見た目は同じだが、後ろが透けない） */
+  --color-accent-pale: color-mix(in oklab, var(--color-accent) 10%, white);
   /* 「今から入れる面談」以降の紺系 */
   --color-sub2: #454e88;
   --color-main2: #7b85c2;
   --color-frame2: #afc6f0; /* third2 */
+  /* 薄い紺。frame2 の30%を白に混ぜた不透明な色（frame2/30 と見た目は同じだが、後ろが透けない） */
+  --color-pale2: color-mix(in oklab, var(--color-frame2) 30%, white);
   --color-text: #0c0c13;
   /* 選ばれていない選択肢の文字（Figma で名前の付いていない色） */
   --color-hint: #9d9d9d;
+  /* 未入力などのエラー表示（Figma に無いので追加） */
+  --color-error: #d64545;
 
   --font-sans: "Noto Sans JP", sans-serif;
 

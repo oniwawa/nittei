@@ -3,7 +3,7 @@
 
 import type { DateExclusion, Recurrence, WeekdayExclusion } from "./types";
 
-const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
+export const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
 /** 時刻の「時」「分」で選べる値 */
 const HOUR_CHOICES = Array.from({ length: 24 }, (_, i) => i);
@@ -12,7 +12,7 @@ const MINUTE_CHOICES = [0, 15, 30, 45];
 /** 所要時間の「時間」で選べる値（0〜8時間）。「分」は MINUTE_CHOICES で15分刻み */
 const DURATION_HOUR_CHOICES = Array.from({ length: 9 }, (_, i) => i);
 
-const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
+export const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
   { value: "weekly", label: "毎週" },
   { value: "biweeklyFromThisWeek", label: "隔週(今週〜)" },
   { value: "biweeklyFromNextWeek", label: "隔週(来週〜)" },
@@ -55,9 +55,13 @@ const BLUE: Theme = {
 };
 
 const HEADING = "text-2xl font-semibold";
+/** 画面全体の外枠（入力画面と日程確定後の画面で共通） */
+const PAGE =
+  "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-24 text-base md:pt-[168px] md:pb-[244px]";
 /** 入力欄。disabled のときは Figma の「not」色（灰色）になる */
+// aria-invalid="true" が付くと（未入力で出力しようとしたとき）枠が赤くなる
 const FIELD_BASE =
-  "rounded-[5px] border-2 bg-white px-4 py-2 text-text transition-colors disabled:cursor-not-allowed disabled:border-off disabled:text-off";
+  "rounded-[5px] border-2 bg-white px-4 py-2 text-text transition-colors disabled:cursor-not-allowed disabled:border-off disabled:text-off aria-invalid:border-error aria-invalid:ring-2 aria-invalid:ring-error/30";
 
 /** 入力欄の見た目。カーソルを乗せると背景が薄い緑/紺になる */
 function fieldClass(theme: Theme): string {
@@ -147,10 +151,13 @@ function timeRange(
   `;
 }
 
-/** チェックボックス付きの除外ルール1行。チェックが入ると背景が薄緑になる */
+/**
+ * チェックボックス付きの除外ルール1行。チェックが入ると背景が薄緑になる。
+ * data-exclusion-row があると、行の余白をクリックしてもチェックが切り替わる（main.ts）
+ */
 function exclusionRow(toggleId: string, label: string, checked: boolean, details: string): string {
   return `
-    <div class="flex flex-col gap-4 rounded-[15px] px-8 py-6 lg:flex-row lg:items-start lg:justify-between has-[.checkbox:checked]:bg-pale">
+    <div data-exclusion-row class="flex cursor-pointer flex-col gap-4 rounded-[15px] px-8 py-6 lg:flex-row lg:items-start lg:justify-between has-[.checkbox:checked]:bg-pale hover:bg-pale">
       <label class="flex cursor-pointer items-center gap-4">
         <input id="${toggleId}" type="checkbox" class="checkbox peer" ${checked ? "checked" : ""} />
         <span class="whitespace-nowrap peer-checked:font-semibold">${label}</span>
@@ -235,11 +242,99 @@ export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disab
   `;
 }
 
+// ---------- 日程確定後の画面（Figma のラフ案「出力タブ」の構成） ----------
+
+/** 候補の時間帯ボタン。main.ts で aria-pressed を切り替えて選択中の見た目にする */
+export const CANDIDATE_BUTTON =
+  "cursor-pointer rounded-[5px] border-2 border-main2 bg-white px-4 py-2 shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:border-sub2 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
+
+/** 候補日の表示方法を切り替えるタブ。選ばれているタブは紺の下線と文字になる */
+function resultTab(view: "buttons" | "timeline", label: string, panelId: string, selected: boolean): string {
+  return `
+    <button type="button" role="tab" id="tab-${view}" data-view="${view}" aria-controls="${panelId}"
+      aria-selected="${selected}" tabindex="${selected ? 0 : -1}"
+      class="-mb-0.5 cursor-pointer rounded-t-[5px] border-b-4 border-transparent px-6 py-2 text-hint transition-colors hover:bg-frame2/30 aria-selected:border-sub2 aria-selected:font-semibold aria-selected:text-sub2">
+      ${label}
+    </button>
+  `;
+}
+
+/**
+ * タイムラインの候補ブロック。紺の枠で、選ぶと紺に塗りつぶされる（CANDIDATE_BUTTON と同じ配色）。
+ * 後ろの罫線が透けないよう、乗せたときの色は半透明の frame2/30 ではなく不透明な pale2 にしている。
+ * 位置と高さは main.ts で style に入れる
+ */
+export const TIMELINE_CANDIDATE =
+  "absolute inset-x-1 cursor-pointer overflow-hidden rounded-[5px] border-2 border-main2 bg-white px-1 text-xs shadow-button transition-colors aria-[pressed=false]:hover:bg-pale2 aria-pressed:border-sub2 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
+
+/**
+ * タイムラインのカレンダーの予定。「他の予定あり」の一覧と同じ薄い黄色。
+ * 後ろの罫線が透けないよう、半透明の accent/10 ではなく不透明な accent-pale にしている
+ */
+export const TIMELINE_EVENT =
+  "pointer-events-none absolute inset-x-1 overflow-hidden rounded-[5px] border-l-4 border-accent bg-accent-pale px-1 text-xs text-text";
+
+/** 「面接日程を出力」を押した後に表示する画面。最初は hidden で隠しておく */
+function resultView(): string {
+  return `
+    <main id="result-view" hidden class="${PAGE}">
+      <section class="flex w-full flex-col gap-8">
+        <h2 class="${HEADING} text-sub2">面接日程の候補</h2>
+
+        ${panel(
+          BLUE,
+          "候補日",
+          `企業に提示したい日時をクリックして選んでください<br />
+          <span id="result-summary" class="text-main2"></span>`,
+          `<div class="flex flex-col gap-6">
+            <!-- 表示方法の切り替え。選んだ候補は両方で共通（main.ts の showCandidateView） -->
+            <div role="tablist" aria-label="候補日の表示方法" class="flex gap-2 border-b-2 border-frame2">
+              ${resultTab("buttons", "ボタン", "candidate-list", false)}
+              ${resultTab("timeline", "タイムライン", "candidate-timeline", true)}
+            </div>
+            <div id="candidate-list" role="tabpanel" aria-labelledby="tab-buttons" hidden class="flex flex-col gap-6 px-0 md:px-8"></div>
+            <!-- 横に日付、縦に時刻のタイムライン。日数が多いときは横にスクロールする -->
+            <div id="candidate-timeline" role="tabpanel" aria-labelledby="tab-timeline" class="overflow-x-auto"></div>
+          </div>`,
+        )}
+
+        ${panel(
+          BLUE,
+          "出力文",
+          "選んだ候補日が「出力文章の形式」で並びます。コピーする前に書き換えることもできます",
+          `<textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
+            class="${fieldClass(BLUE)} w-full resize-y leading-relaxed"></textarea>`,
+        )}
+
+        <div class="flex w-full flex-col items-center gap-2">
+          <button id="copy-button" type="button"
+            class="w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
+            文章をコピー
+          </button>
+          <span id="copy-status" role="status" class="text-main2"></span>
+        </div>
+      </section>
+
+      <section class="flex w-full flex-col gap-8">
+        <h2 class="${HEADING} text-sub2">以下の条件で出力</h2>
+        <section class="rounded-[15px] border-2 border-frame2 bg-white p-4 md:px-8">
+          <!-- 中身は main.ts の renderConditionSummary が作る -->
+          <dl id="condition-summary" class="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-[max-content_1fr]"></dl>
+        </section>
+        <button id="back-button" type="button"
+          class="h-[85px] w-full cursor-pointer rounded-[15px] border-2 border-sub2 bg-white px-[59px] py-4 font-semibold text-sub2 shadow-button transition-colors hover:bg-frame2/30">
+          条件を編集
+        </button>
+      </section>
+    </main>
+  `;
+}
+
 // ---------- ページ全体 ----------
 
 export function renderLayout(root: HTMLElement): void {
   root.innerHTML = `
-    <main class="mx-auto flex max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-24 text-base md:pt-[168px] md:pb-[244px]">
+    <main id="form-view" class="${PAGE}">
 
       <section class="flex w-full flex-col gap-8">
         <h2 class="${HEADING} text-sub">今のスケジュール</h2>
@@ -253,11 +348,11 @@ export function renderLayout(root: HTMLElement): void {
           GREEN,
           "指定した日程を除外",
           "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
-          `<div class="flex flex-col gap-4">
+          `<div class="flex flex-col gap-4 ">
             ${exclusionRow(
               "date-exclusion-toggle",
               "日付を指定して除外",
-              true,
+              false,
               exclusionList("date-exclusion-list", "add-date-exclusion"),
             )}
             ${exclusionRow(
@@ -285,7 +380,7 @@ export function renderLayout(root: HTMLElement): void {
                 ${WEEKDAY_NAMES.map(
                   (name, i) => `
                   <button type="button" data-weekday="${i}" aria-pressed="false"
-                    class="w-[76px] cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white">
+                    class="w-[76px] cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950">
                     ${name}
                   </button>`,
                 ).join("")}
@@ -359,9 +454,15 @@ export function renderLayout(root: HTMLElement): void {
       </section>
 
       <button id="export-button" type="button"
-        class="h-[85px] w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-accent">
+        class="h-[85px] w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
         面接日程を出力
       </button>
     </main>
+
+    ${resultView()}
+
+    <!-- 画面上部に数秒だけ出る通知（main.ts の showToast） -->
+    <div id="toast" role="alert" hidden
+      class="fixed top-6 left-1/2 z-50 -translate-x-1/2 rounded-[15px] bg-error px-6 py-3 font-semibold text-white shadow-button"></div>
   `;
 }
