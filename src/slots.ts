@@ -103,9 +103,22 @@ export function findFreeSlots(
 ): TimeSlot[] {
   const slots: TimeSlot[] = [];
 
+  // こだわり条件「予定の前後に余裕」: 予定を前後に bufferMinutes 分ずつ広げて、埋まっているものとして扱う
+  const buffer = options.preference === "buffer" ? options.bufferMinutes * 60_000 : 0;
+  const paddedBusy = busy.map((slot) => ({
+    start: new Date(slot.start.getTime() - buffer),
+    end: new Date(slot.end.getTime() + buffer),
+  }));
+
   // startOffset 日後から daysAhead 日分、1日ずつ調べる
   for (const day of upcomingDays(options.startOffset, options.daysAhead, now)) {
     if (isExcludedDay(day.getDay(), options.excludedWeekdays)) continue;
+
+    // こだわり条件「何も予定が入っていない日のみ」: その日(0:00〜24:00)に少しでも予定があれば候補にしない
+    if (options.preference === "freeDayOnly") {
+      const wholeDay: TimeSlot = { start: atMinutes(day, 0), end: atMinutes(day, 24 * 60) };
+      if (busy.some((slot) => overlaps(slot, wholeDay))) continue;
+    }
 
     const window: TimeSlot = {
       start: atMinutes(day, options.dayStartMinutes),
@@ -122,7 +135,7 @@ export function findFreeSlots(
     };
 
     // この日の「時刻の範囲」に重なる予定だけを、始まりが早い順に並べる
-    const dayBusy = busy
+    const dayBusy = paddedBusy
       .filter((slot) => overlaps(slot, window))
       .sort((x, y) => x.start.getTime() - y.start.getTime());
 

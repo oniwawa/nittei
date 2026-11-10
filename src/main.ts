@@ -15,7 +15,7 @@ import {
 import { connectGoogle, disconnectGoogle, fetchGoogleBusy, isConfigured, isConnected, loadGoogleScript } from "./google";
 import { exclusionSlots, findFreeSlots, upcomingDays } from "./slots";
 import { readTime, setUpTimePickers } from "./timePicker";
-import type { DateExclusion, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
+import type { DateExclusion, Preference, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
 // ---------- 画面の部品を取得 ----------
 
@@ -68,6 +68,8 @@ const periodRangeRadio = getElement<HTMLInputElement>("#period-range");
 const periodNoneRadio = getElement<HTMLInputElement>("#period-none");
 const periodStartInput = getElement<HTMLInputElement>("#period-start");
 const periodWeeksInput = getElement<HTMLInputElement>("#period-weeks");
+const preferenceRadios = [...document.querySelectorAll<HTMLInputElement>('input[name="preference"]')];
+const bufferMinutesSelect = getElement<HTMLSelectElement>("#buffer-minutes");
 
 // 出力文章の形式
 const templateInput = getElement<HTMLTextAreaElement>("#output-template");
@@ -98,7 +100,7 @@ interface AppState {
   includedWeekdays: Set<number>;
   dateExclusions: DateExclusion[];
   weekdayExclusions: WeekdayExclusion[];
-  /** 「面接日程を出力」を押したときに計算した候補と、その中で選ばれているもの */
+  /** 「日程候補をまとめて出力」を押したときに計算した候補と、その中で選ばれているもの */
   result: {
     slots: TimeSlot[];
     /** 選択中の候補の番号（slots の添字） */
@@ -140,7 +142,16 @@ const state: AppState = {
     selected: new Set(),
     template: "",
     expandedDays: new Set(),
-    options: { startOffset: 1, daysAhead: 0, durationMinutes: 0, dayStartMinutes: 0, dayEndMinutes: 0, excludedWeekdays: [] },
+    options: {
+      startOffset: 1,
+      daysAhead: 0,
+      durationMinutes: 0,
+      dayStartMinutes: 0,
+      dayEndMinutes: 0,
+      excludedWeekdays: [],
+      preference: "none",
+      bufferMinutes: 0,
+    },
     bounds: [],
   },
   candidateView: "timeline",
@@ -183,7 +194,14 @@ function readOptions(): SearchOptions {
     dayStartMinutes: readTime(dayStartInput),
     dayEndMinutes: readTime(dayEndInput),
     excludedWeekdays: allWeekdays.filter((day) => !state.includedWeekdays.has(day)),
+    preference: readPreference(),
+    bufferMinutes: Number(bufferMinutesSelect.value),
   };
+}
+
+/** こだわり条件で選ばれているもの */
+function readPreference(): Preference {
+  return (preferenceRadios.find((radio) => radio.checked)?.value ?? "none") as Preference;
 }
 
 /** チェックが入っている除外ルールだけを返す */
@@ -205,11 +223,11 @@ function computeSlots(): TimeSlot[] {
 // ---------- 描画 ----------
 
 function renderCalendarStatus(calendarCount?: number): void {
-  calendarStatus.textContent =
-    calendarCount === undefined
-      ? "Googleカレンダーと連携"
-      : `連携中：${calendarCount}個のカレンダー（押すと連携し直します）`;
-  calendarDisconnectButton.hidden = calendarCount === undefined;
+  const connected = calendarCount !== undefined;
+  calendarStatus.textContent = connected ? "カレンダー反映済み" : "Googleカレンダーと連携";
+  // toggleAttribute(名前, true/false) で属性を付けたり外したりする。付いていると見た目が「反映済み」になる
+  calendarConnectButton.toggleAttribute("data-connected", connected);
+  calendarDisconnectButton.hidden = !connected;
 }
 
 function renderDateExclusions(): void {
@@ -489,7 +507,7 @@ function otherEventsButton(day: string, count: number, expanded: boolean, listId
   const button = document.createElement("button");
   button.type = "button";
   button.className =
-    "cursor-pointer rounded-full border border-accent px-3 py-0.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/10";
+    "cursor-pointer rounded-full border border-sub px-3 py-0.5 text-sm font-semibold text-sub transition-colors hover:bg-pale";
   button.dataset.toggleDay = day;
   button.setAttribute("aria-expanded", String(expanded));
   button.setAttribute("aria-controls", listId);
@@ -509,7 +527,7 @@ function otherEventsList(events: TimeSlot[], date: Date, listId: string): HTMLUL
 
   const list = document.createElement("ul");
   list.id = listId;
-  list.className = "flex flex-col gap-1 rounded-[5px] border-l-4 border-accent bg-accent/10 px-4 py-2 text-sm";
+  list.className = "flex flex-col gap-1 rounded-[5px] border-l-4 border-sub bg-pale px-4 py-2 text-sm text-sub";
   for (const event of [...events].sort((x, y) => x.start.getTime() - y.start.getTime())) {
     const allDay = event.start <= dayStart && event.end >= dayEnd;
     const start = event.start < dayStart ? "0:00" : formatTime(event.start);
@@ -615,6 +633,16 @@ function renderConditionSummary(): void {
     ["所要時間", [formatDuration(options.durationMinutes)]],
     ["提案する期間", [period]],
     [
+      "こだわり条件",
+      [
+        options.preference === "freeDayOnly"
+          ? "何も予定が入っていない日のみを提案"
+          : options.preference === "buffer"
+            ? `予定の前後に${formatDuration(options.bufferMinutes)}の余裕を持たせて提案`
+            : "指定しない",
+      ],
+    ],
+    [
       "日付を指定して除外",
       dates.length > 0
         ? dates.map((d) => `${formatDate(new Date(`${d.date}T00:00`))} ${timeRange(d.startMinutes, d.endMinutes)}`)
@@ -631,14 +659,18 @@ function renderConditionSummary(): void {
   ];
 
   conditionSummary.replaceChildren(
-    ...items.flatMap(([label, values]) => {
+    // 項目名と内容を1組ずつ div で包む（dl の中は div で区切ってよい）。md以上は横に並べる（Figma の item_condition を 12px 用に縮めたもの）
+    ...items.map(([label, values]) => {
+      const item = document.createElement("div");
+      item.className = "flex flex-col gap-0.5 md:flex-row md:gap-3";
       const dt = document.createElement("dt");
-      dt.className = "font-semibold text-sub2";
+      dt.className = "font-semibold text-sub2 md:w-[108px] md:shrink-0";
       dt.textContent = label;
       const dd = document.createElement("dd");
       dd.className = "whitespace-pre-line";
       dd.textContent = values.join("\n");
-      return [dt, dd];
+      item.append(dt, dd);
+      return item;
     }),
   );
 }
@@ -866,7 +898,7 @@ function renderTimeline(): void {
       block.className = TIMELINE_EVENT;
       block.style.top = `${top}px`;
       block.style.height = `${height}px`;
-      block.textContent = "予定あり";
+      block.textContent = "他の予定あり";
       body.append(block);
     }
 
@@ -932,12 +964,20 @@ function renderPeriod(): void {
 periodRangeRadio.addEventListener("change", renderPeriod);
 periodNoneRadio.addEventListener("change", renderPeriod);
 
+/** こだわり条件: 「予定の前後に余裕」を選んでいるときだけ、余裕の時間を選べるようにする */
+function renderPreference(): void {
+  bufferMinutesSelect.disabled = readPreference() !== "buffer";
+}
+
+for (const radio of preferenceRadios) radio.addEventListener("change", renderPreference);
+
 async function init(): Promise<void> {
   // 開始日は明日以降だけ選べるようにし、最初は明日を入れておく
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   periodStartInput.min = periodStartInput.value = toDateValue(tomorrow);
   renderPeriod();
+  renderPreference();
 
   // ポップアップがブロックされないよう、ボタンが押される前に Google のスクリプトを読み込んでおく
   renderCalendarStatus();
