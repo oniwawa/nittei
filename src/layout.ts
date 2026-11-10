@@ -1,7 +1,7 @@
 // ページの骨組み(HTML)を TypeScript で組み立てる。
 // 見た目は Figma「EasyMeet」の page_interviewScheduler に合わせている。
 
-import type { DateExclusion, Recurrence, WeekdayExclusion } from "./types";
+import type { DateExclusion, Preference, Recurrence, WeekdayExclusion } from "./types";
 
 export const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -11,6 +11,9 @@ const MINUTE_CHOICES = [0, 15, 30, 45];
 
 /** 所要時間の「時間」で選べる値（0〜8時間）。「分」は MINUTE_CHOICES で15分刻み */
 const DURATION_HOUR_CHOICES = Array.from({ length: 9 }, (_, i) => i);
+
+/** こだわり条件「予定の前後に◯時間の余裕」で選べる値（分）。0.5〜4時間を0.5時間刻み */
+const BUFFER_CHOICES = Array.from({ length: 8 }, (_, i) => (i + 1) * 30);
 
 export const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
   { value: "weekly", label: "毎週" },
@@ -22,7 +25,7 @@ export const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
 // ---------- 共通の見た目 ----------
 
 /**
- * 配色。「いまのスケジュール」は緑、「今から入れる面談」以降は紺。
+ * 配色。「いまのスケジュール」は緑、「提案するスケジュール」以降は紺。
  * Tailwind はソース中の文字列からクラスを探すので、クラス名は省略せずに書く
  */
 interface Theme {
@@ -55,9 +58,13 @@ const BLUE: Theme = {
 };
 
 const HEADING = "text-2xl font-semibold";
+/** パネルの中の入力項目の見出し（曜日、提案する期間など）。text-xl = 20px */
+const LABEL = "text-xl font-semibold";
 /** 画面全体の外枠（入力画面と日程確定後の画面で共通） */
 const PAGE =
   "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-24 text-base md:pt-[168px] md:pb-[244px]";
+/** 結果画面。上に条件のパネルを置くので、md以上の上の余白は Figma に合わせて小さくする */
+const RESULT_PAGE = PAGE.replace("md:pt-[168px]", "md:pt-8");
 /** 入力欄。disabled のときは Figma の「not」色（灰色）になる */
 // aria-invalid="true" が付くと（未入力で出力しようとしたとき）枠が赤くなる
 const FIELD_BASE =
@@ -106,16 +113,54 @@ function timeSelect(theme: Theme, attrs: string, minutes: number, role: "start" 
   `;
 }
 
-/** 色付きの枠で囲んだパネル（見出し＋説明＋中身） */
-function panel(theme: Theme, title: string, description: string, body: string): string {
+/** パネルの見出しと説明 */
+function panelHeading(theme: Theme, title: string, description: string): string {
   return `
-    <section class="flex flex-col gap-8 rounded-[15px] border-2 ${theme.frame} bg-white p-4">
-      <div class="flex flex-col gap-2">
-        <h3 class="${HEADING} ${theme.text}">${title}</h3>
-        <p>${description}</p>
-      </div>
+    <div class="flex flex-col gap-2">
+      <h3 class="${HEADING} ${theme.text}">${title}</h3>
+      <p>${description}</p>
+    </div>
+  `;
+}
+
+/**
+ * 曜日ボタンが選ばれたときの色。平日は紺、土曜は青緑、日曜は赤（Figma の field_weekdays）。
+ * 土日は濃い色が用意されていないので、マウスを乗せたときは brightness で少し暗くする
+ */
+function weekdayPressedClass(weekday: number): string {
+  if (weekday === 6) {
+    return "aria-pressed:border-saturday aria-pressed:bg-saturday aria-pressed:hover:brightness-90";
+  }
+  if (weekday === 0) {
+    return "aria-pressed:border-sunday aria-pressed:bg-sunday aria-pressed:hover:brightness-90";
+  }
+  return "aria-pressed:bg-sub2 aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
+}
+
+/** 色付きの枠で囲んだパネルの外枠。className で高さの伸ばし方などを足せる */
+function panelFrame(theme: Theme, body: string, className = ""): string {
+  return `
+    <section class="flex flex-col gap-8 rounded-[15px] border-2 ${theme.frame} bg-white p-4 ${className}">
       ${body}
     </section>
+  `;
+}
+
+/** 色付きの枠で囲んだパネル（見出し＋説明＋中身） */
+function panel(theme: Theme, title: string, description: string, body: string, className = ""): string {
+  return panelFrame(theme, `${panelHeading(theme, title, description)}${body}`, className);
+}
+
+/**
+ * 「こだわり条件」の選択肢1つ。選ばれていないときは文字が灰色になる。
+ * label の中に入れた select などを押しても、ラジオは切り替わらない（押した部品の操作が優先される）
+ */
+function preferenceRadio(value: Preference, label: string, checked: boolean): string {
+  return `
+    <label class="flex cursor-pointer items-center gap-4">
+      <input type="radio" name="preference" value="${value}" ${checked ? "checked" : ""} class="radio peer" />
+      <span class="text-hint peer-checked:text-text">${label}</span>
+    </label>
   `;
 }
 
@@ -123,7 +168,7 @@ function panel(theme: Theme, title: string, description: string, body: string): 
 function field(theme: Theme, label: string, body: string): string {
   return `
     <div class="flex flex-col gap-4">
-      <h4 class="font-semibold ${theme.text}">${label}</h4>
+      <h4 class="${LABEL} ${theme.text}">${label}</h4>
       ${body}
     </div>
   `;
@@ -157,7 +202,7 @@ function timeRange(
  */
 function exclusionRow(toggleId: string, label: string, checked: boolean, details: string): string {
   return `
-    <div data-exclusion-row class="flex cursor-pointer flex-col gap-4 rounded-[15px] px-8 py-6 lg:flex-row lg:items-start lg:justify-between has-[.checkbox:checked]:bg-pale hover:bg-pale">
+    <div data-exclusion-row class="flex cursor-pointer flex-col gap-4 rounded-[15px] p-4 md:px-8 md:py-6 has-[.checkbox:checked]:bg-pale hover:bg-pale">
       <label class="flex cursor-pointer items-center gap-4">
         <input id="${toggleId}" type="checkbox" class="checkbox peer" ${checked ? "checked" : ""} />
         <span class="whitespace-nowrap peer-checked:font-semibold">${label}</span>
@@ -268,23 +313,43 @@ export const TIMELINE_CANDIDATE =
   "absolute inset-x-1 cursor-pointer overflow-hidden rounded-[5px] border-2 border-main2 bg-white px-1 text-xs shadow-button transition-colors aria-[pressed=false]:hover:bg-pale2 aria-pressed:border-sub2 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
 
 /**
- * タイムラインのカレンダーの予定。「他の予定あり」の一覧と同じ薄い黄色。
- * 後ろの罫線が透けないよう、半透明の accent/10 ではなく不透明な accent-pale にしている
+ * タイムラインのカレンダーの予定。「他の予定あり」の一覧と同じ、薄い緑(pale)の地に緑(sub)の線と文字。
+ * pale は不透明な色なので、後ろの罫線は透けない
  */
 export const TIMELINE_EVENT =
-  "pointer-events-none absolute inset-x-1 overflow-hidden rounded-[5px] border-l-4 border-accent bg-accent-pale px-1 text-xs text-text";
+  "pointer-events-none absolute inset-x-1 overflow-hidden rounded-[5px] border-l-4 border-sub bg-pale px-1 text-xs text-sub";
 
-/** 「面接日程を出力」を押した後に表示する画面。最初は hidden で隠しておく */
+/** 「日程候補をまとめて出力」を押した後に表示する画面。最初は hidden で隠しておく */
 function resultView(): string {
   return `
-    <main id="result-view" hidden class="${PAGE}">
+    <main id="result-view" hidden class="${RESULT_PAGE}">
+      <!-- 出力した条件と「条件を編集」ボタン。画面のいちばん上に置き、スクロールしても上に残す（Figma の section_conditions）。
+           md以上: 外側の section を sticky で固定し、白い背景で下を流れる候補日を隠す。
+                   上下の py-2 は固定されたときの余白で、-my-2 で固定前の位置がずれないよう打ち消している。
+                   中の div が枠付きのパネルになり、左に条件、右にボタンを並べる。
+           スマホ: 全部固定すると画面がほぼ埋まるので、「条件を編集」ボタンだけ固定する。
+                   sticky は親の箱の中でしか効かないので、外側の section と中の div を contents にして
+                   ボタンを main の直接の子として扱い、main の中で固定させる。枠は条件の箱のほうに付ける -->
+      <section aria-label="出力した条件" class="contents text-xs md:sticky md:top-0 md:z-20 md:-my-2 md:block md:w-full md:bg-white md:py-2">
+        <div class="contents md:flex md:items-center md:justify-between md:gap-3 md:rounded-[10px] md:border-2 md:border-frame2 md:bg-white md:px-3 md:py-2">
+          <div class="w-full rounded-[10px] border-2 border-frame2 bg-white px-3 py-2 text-xs md:w-auto md:min-w-0 md:flex-1 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+            <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める） -->
+            <dl id="condition-summary" class="grid grid-cols-1 gap-x-8 gap-y-2 lg:grid-flow-col lg:grid-cols-2 lg:grid-rows-4"></dl>
+          </div>
+          <!-- スマホでは main の gap(52px) が効くので、-mt-10 で 12px にそろえる -->
+          <button id="back-button" type="button"
+            class="sticky top-2 z-20 -mt-10 w-full cursor-pointer rounded-[10px] border-2 border-sub2 bg-white px-3 py-2 text-xs font-semibold text-sub2 shadow-button transition-colors hover:bg-pale2 md:static md:mt-0 md:w-auto md:shrink-0">
+            条件を編集
+          </button>
+        </div>
+      </section>
       <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub2">面接日程の候補</h2>
+        <h2 class="${HEADING} text-sub2">提案する日程の候補</h2>
 
         ${panel(
           BLUE,
           "候補日",
-          `企業に提示したい日時をクリックして選んでください<br />
+          `相手に提案したい日時をクリックして選んでください。<strong class="font-semibold text-sub2">いくつでも選べます</strong><br />
           <span id="result-summary" class="text-main2"></span>`,
           `<div class="flex flex-col gap-6">
             <!-- 表示方法の切り替え。選んだ候補は両方で共通（main.ts の showCandidateView） -->
@@ -302,30 +367,21 @@ function resultView(): string {
           BLUE,
           "出力文",
           "選んだ候補日が「出力文章の形式」で並びます。コピーする前に書き換えることもできます",
-          `<textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
-            class="${fieldClass(BLUE)} w-full resize-y leading-relaxed"></textarea>`,
+          `<!-- コピーのボタンは出力文の枠の中、文章のすぐ下に置く -->
+          <div class="flex flex-col gap-4">
+            <textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
+              class="${fieldClass(BLUE)} w-full resize-y leading-relaxed"></textarea>
+            <div class="flex w-full flex-col items-center gap-2">
+              <button id="copy-button" type="button"
+                class="w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
+                文章をコピー
+              </button>
+              <span id="copy-status" role="status" class="text-main2"></span>
+            </div>
+          </div>`,
         )}
-
-        <div class="flex w-full flex-col items-center gap-2">
-          <button id="copy-button" type="button"
-            class="w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
-            文章をコピー
-          </button>
-          <span id="copy-status" role="status" class="text-main2"></span>
-        </div>
       </section>
 
-      <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub2">以下の条件で出力</h2>
-        <section class="rounded-[15px] border-2 border-frame2 bg-white p-4 md:px-8">
-          <!-- 中身は main.ts の renderConditionSummary が作る -->
-          <dl id="condition-summary" class="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-[max-content_1fr]"></dl>
-        </section>
-        <button id="back-button" type="button"
-          class="h-[85px] w-full cursor-pointer rounded-[15px] border-2 border-sub2 bg-white px-[59px] py-4 font-semibold text-sub2 shadow-button transition-colors hover:bg-frame2/30">
-          条件を編集
-        </button>
-      </section>
     </main>
   `;
 }
@@ -338,7 +394,9 @@ function siteHeader(): string {
     <header class="border-b-2 border-frame2 bg-white">
       <div class="mx-auto flex max-w-[1075px] flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-4">
         <h1 class="text-2xl font-semibold text-sub2">にっていじ</h1>
-        <p class="text-sm">就活の面接日程を、カレンダーの空き時間からかんたんに提案</p>
+        <!-- キャッチコピー（index.html の title と同じ言葉）と、何をするアプリかの一言 -->
+        <p class="font-bold text-sub2 ">「複数日程ご提示ください」<span class="font-medium">をカンタンに</span></p>
+    
       </div>
     </header>
   `;
@@ -350,7 +408,7 @@ function siteFooter(): string {
     <footer class="border-t-2 border-frame2 bg-white">
       <div class="mx-auto flex max-w-[1075px] flex-col gap-3 px-4 py-6 text-sm">
         <p>
-          にっていじは、Googleカレンダーの「予定が入っている時間帯」だけを読み込み、面接日程の候補を作るアプリです。
+          にっていじは、Googleカレンダーの「予定が入っている時間帯」だけを読み込み、相手に提案する複数の日程候補をまとめて作るアプリです。
           予定の名前・場所・参加者などは読み込まず、読み込んだ情報はブラウザの中だけで使い、保存しません。
         </p>
         <nav class="flex flex-wrap gap-6">
@@ -369,25 +427,36 @@ export function renderLayout(root: HTMLElement): void {
 
     <main id="form-view" class="${PAGE}">
 
-      <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub">今のスケジュール</h2>
+      <!-- PC(lg以上)では「私のスケジュール」と「提案するスケジュール」を左右に並べる。
+           grid の子は同じ高さに伸びるので、中のパネルを flex-1 で伸ばして下端をそろえる -->
+      <div class="grid w-full grid-cols-1 gap-[52px] lg:grid-cols-2 lg:gap-8">
+      <section class="flex min-w-0 flex-col gap-8">
+        <h2 class="${HEADING} text-sub">私のスケジュール</h2>
 
-        <div class="flex w-full flex-col items-center gap-2">
-          <button id="calendar-connect" type="button"
-            class="w-full cursor-pointer rounded-[15px] bg-sub px-[59px] py-4 text-center font-semibold text-white shadow-button transition-colors hover:bg-green-900 disabled:cursor-wait disabled:opacity-70">
-            <span id="calendar-status">Googleカレンダーと連携</span>
-          </button>
-          <p class="text-sm">
-            予定の名前や場所は読み込まず、予定が入っている時間帯だけを使います
-            <button id="calendar-disconnect" type="button" hidden class="ml-2 cursor-pointer text-sub underline">連携を解除</button>
-          </p>
-        </div>
-
-        ${panel(
+        ${panelFrame(
           GREEN,
-          "指定した日程を除外",
-          "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
-          `<div class="flex flex-col gap-4 ">
+          `<div class="flex w-full flex-col items-center gap-2 lg:py-12">
+            <!-- 連携が済むと main.ts で data-connected が付き、薄い緑(base)の背景に緑の枠・文字になる。
+                 未連携のときも同じ色の枠を付けておき、切り替わってもボタンの大きさが変わらないようにする -->
+            <button id="calendar-connect" type="button"
+              class="w-full cursor-pointer rounded-[15px] border-2 border-sub bg-sub px-[59px] py-4 text-center font-semibold text-white shadow-button transition-colors hover:bg-green-900 disabled:cursor-wait disabled:opacity-70 data-connected:bg-pale data-connected:text-sub data-connected:hover:bg-frame/40">
+              <span id="calendar-status">Googleカレンダーと連携</span>
+            </button>
+            <!-- 連携中だけ表示する（main.ts の renderCalendarStatus） -->
+            <button id="calendar-disconnect" type="button" hidden
+              class="my-2 cursor-pointer rounded-[15px] bg-sub px-10 py-2 font-semibold text-white shadow-button transition-colors hover:bg-green-900">
+              解除する
+            </button>
+            <p class="text-sm text-sub">
+              <b>カレンダー内の予定が入っている時間</b>を読み込みます（予定タイトルなどの情報は読み込みません）
+            </p>
+          </div>
+          ${panelHeading(
+            GREEN,
+            "＋指定した日程を除外",
+            "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
+          )}
+          <div class="flex flex-col gap-4">
             ${exclusionRow(
               "date-exclusion-toggle",
               "日付を指定して除外",
@@ -401,11 +470,12 @@ export function renderLayout(root: HTMLElement): void {
               exclusionList("weekday-exclusion-list", "add-weekday-exclusion"),
             )}
           </div>`,
+          "flex-1",
         )}
       </section>
 
-      <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub2">今から入れる面談</h2>
+      <section class="flex min-w-0 flex-col gap-8">
+        <h2 class="${HEADING} text-sub2">提案するスケジュール</h2>
 
         ${panel(
           BLUE,
@@ -415,11 +485,13 @@ export function renderLayout(root: HTMLElement): void {
             ${field(
               BLUE,
               "曜日",
-              `<div class="flex flex-wrap gap-4">
+              `<!-- 2カラム(lg以上)では5列のグリッドにして、上段に月～金、下段に土日を並べる。
+                   日曜(i=0)だけ order-last で最後に回す。列の幅に収まるようボタンはマスいっぱいに広げる -->
+              <div class="flex flex-wrap gap-4 lg:grid lg:grid-cols-5">
                 ${WEEKDAY_NAMES.map(
                   (name, i) => `
                   <button type="button" data-weekday="${i}" aria-pressed="false"
-                    class="w-[76px] cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950">
+                    class="${i === 0 ? "lg:order-last" : ""} w-[76px] lg:w-auto cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:font-semibold aria-pressed:text-white ${weekdayPressedClass(i)}">
                     ${name}
                   </button>`,
                 ).join("")}
@@ -450,9 +522,11 @@ export function renderLayout(root: HTMLElement): void {
               "提案する期間",
               `<div class="flex flex-col gap-4">
                 <!-- 期間を指定する: 開始日から〇週間。選ばれていないときは入力欄を灰色にする（main.ts の renderPeriod） -->
+                <!-- 日付欄は 160〜262px の間で伸び縮みする。幅が足りれば「から〇週間」まで1行に収め、
+                     足りないときだけ「から〇週間」を次の行へ送る -->
                 <div class="flex flex-wrap items-center gap-4">
                   <input id="period-range" type="radio" name="period" value="range" checked aria-label="期間を指定する" class="radio" />
-                  <input id="period-start" type="date" aria-label="開始日" class="${fieldClass(BLUE)} w-[262px] cursor-pointer text-center" />
+                  <input id="period-start" type="date" aria-label="開始日" class="${fieldClass(BLUE)} min-w-[160px] max-w-[262px] flex-1 cursor-pointer text-center" />
                   <label class="flex items-center gap-2">
                     から
                     <input id="period-weeks" type="number" min="1" max="8" value="1" aria-label="週間" class="${fieldClass(BLUE)} w-[72px] text-right" />
@@ -465,9 +539,36 @@ export function renderLayout(root: HTMLElement): void {
                 </label>
               </div>`,
             )}
+            ${field(
+              BLUE,
+              "こだわり条件",
+              `<div class="flex flex-col gap-4">
+                ${preferenceRadio("none", "指定しない", true)}
+                ${preferenceRadio("freeDayOnly", "何も予定が入っていない日のみを提案", false)}
+                <!-- 余裕の時間は「予定の前後に余裕」を選んだときだけ選べる（main.ts の renderPreference） -->
+                <!-- 文章の中にプルダウンを置き、入りきらないときだけ続きの文字を次の行へ流す。
+                     keep-all で単語の途中では折り返さず、空白か <wbr> の位置でだけ改行する -->
+                ${preferenceRadio(
+                  "buffer",
+                  `<span class="break-keep">予定の<wbr>前後に
+                  <span class="mx-1 inline-flex align-middle">${upDownSelect(
+                    BLUE,
+                    `id="buffer-minutes" aria-label="余裕の時間"`,
+                    BUFFER_CHOICES.map(
+                      (m) => `<option value="${m}" ${m === 60 ? "selected" : ""}>${m / 60}</option>`,
+                    ).join(""),
+                    true,
+                  )}</span>
+                  時間の<wbr>余裕を<wbr>持たせて<wbr>提案</span>`,
+                  false,
+                )}
+              </div>`,
+            )}
           </div>`,
+          "flex-1",
         )}
       </section>
+      </div>
 
       <section class="w-full">
         ${panel(
@@ -476,7 +577,7 @@ export function renderLayout(root: HTMLElement): void {
           `{}が入力された箇所に月、日付、曜日、時間、分の順番で出力されます<br />
           <span class="text-main2">例：{}/{} ({}) {}時{}分～{}時{}分　→　11/11(月)  9時00分～18時00分</span>`,
           `<div class="flex flex-col gap-4">
-            <h4 class="font-semibold text-sub2">出力文章の形式を入力</h4>
+            <h4 class="${LABEL} text-sub2">出力文章の形式を入力</h4>
             <!-- {} だけ色を変えるため、透明な文字の textarea の下に色付きの同じ文字を重ねている -->
             <div class="relative rounded-[5px] transition-colors hover:bg-frame2/30">
               <div id="template-highlight" aria-hidden="true"
@@ -486,7 +587,7 @@ export function renderLayout(root: HTMLElement): void {
             </div>
           </div>
           <div class="flex flex-col gap-4">
-            <h4 class="font-semibold text-sub2">出力デモ</h4>
+            <h4 class="${LABEL} text-sub2">出力デモ</h4>
             <p id="output-demo" class="whitespace-pre-wrap"></p>
           </div>`,
         )}
@@ -494,7 +595,7 @@ export function renderLayout(root: HTMLElement): void {
 
       <button id="export-button" type="button"
         class="h-[85px] w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
-        面接日程を出力
+        日程候補をまとめて出力
       </button>
     </main>
 

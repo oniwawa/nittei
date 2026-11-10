@@ -13,7 +13,7 @@ export interface SearchOptions {
   startOffset: number;
   /** 何日分探すか */
   daysAhead: number;
-  /** 面談1回の長さ（分） */
+  /** 提案する予定1回の長さ（分） */
   durationMinutes: number;
   /** 1日の中で候補にしてよい開始時刻（0:00 からの分。8:30 なら 510） */
   dayStartMinutes: number;
@@ -21,7 +21,19 @@ export interface SearchOptions {
   dayEndMinutes: number;
   /** 候補から外す曜日（0=日曜 〜 6=土曜） */
   excludedWeekdays: number[];
+  /** こだわり条件 */
+  preference: Preference;
+  /** preference が "buffer" のとき、予定の前後に空ける時間（分） */
+  bufferMinutes: number;
 }
+
+/**
+ * こだわり条件。ここでの「予定」は、カレンダーの予定と、チェックが入っている除外ルールの両方
+ * - none: 指定しない
+ * - freeDayOnly: 何も予定が入っていない日だけを候補にする
+ * - buffer: 予定の前後に bufferMinutes 分の余裕を空けて候補にする
+ */
+export type Preference = "none" | "freeDayOnly" | "buffer";
 
 /** 「日付を指定して除外」の1行分 */
 export interface DateExclusion {
