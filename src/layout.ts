@@ -1,323 +1,29 @@
-// ページの骨組み(HTML)を TypeScript で組み立てる。
-// 見た目は Figma「EasyMeet」の page_interviewScheduler に合わせている。
+// ページの骨組み(HTML)を、components/ の部品を組み合わせて作る。
+// 見た目は Figma「EasyMeet」の page_interviewScheduler（入力画面）と 出力画面_* に合わせている。
+// 部品の名前は Figma のコンポーネント名に合わせている（button_candidate → buttonCandidate など）
 
-import type { DateExclusion, Preference, Recurrence, WeekdayExclusion } from "./types";
+import { BUFFER_CHOICES, DURATION_HOUR_CHOICES, MINUTE_CHOICES, WEEKDAY_NAMES } from "./choices";
+import { buttonAction, panel, panelFrame, panelHeading } from "./components/common";
+import {
+  buttonWeekday,
+  calendarConnect,
+  exclusionGroup,
+  field,
+  numberOptions,
+  radioOption,
+  selectBox,
+  timeRange,
+} from "./components/form";
+import { tabCandidateView } from "./components/result";
+import { BLUE, fieldClass, GREEN, HEADING, LABEL } from "./components/theme";
 
-export const WEEKDAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
-
-/** 時刻の「時」「分」で選べる値 */
-const HOUR_CHOICES = Array.from({ length: 24 }, (_, i) => i);
-const MINUTE_CHOICES = [0, 15, 30, 45];
-
-/** 所要時間の「時間」で選べる値（0〜8時間）。「分」は MINUTE_CHOICES で15分刻み */
-const DURATION_HOUR_CHOICES = Array.from({ length: 9 }, (_, i) => i);
-
-/** こだわり条件「予定の前後に◯時間の余裕」で選べる値（分）。0.5〜4時間を0.5時間刻み */
-const BUFFER_CHOICES = Array.from({ length: 8 }, (_, i) => (i + 1) * 30);
-
-export const RECURRENCE_CHOICES: { value: Recurrence; label: string }[] = [
-  { value: "weekly", label: "毎週" },
-  { value: "biweeklyFromThisWeek", label: "隔週(今週〜)" },
-  { value: "biweeklyFromNextWeek", label: "隔週(来週〜)" },
-];
-
-
-// ---------- 共通の見た目 ----------
-
-/**
- * 配色。「いまのスケジュール」は緑、「提案するスケジュール」以降は紺。
- * Tailwind はソース中の文字列からクラスを探すので、クラス名は省略せずに書く
- */
-interface Theme {
-  /** 見出しの文字色 */
-  text: string;
-  /** 入力欄の枠の色 */
-  field: string;
-  /** パネルの枠の色 */
-  frame: string;
-  /** プルダウンの下向き矢印の色 */
-  arrow: string;
-  /** 入力欄にカーソルを乗せたときの背景（選べない disabled のときは変えない） */
-  hover: string;
-}
-
-const GREEN: Theme = {
-  text: "text-sub",
-  field: "border-main",
-  frame: "border-frame",
-  arrow: "bg-main",
-  hover: "enabled:hover:bg-pale",
-};
-// 紺系には Figma に薄い色が無いので、パネルの枠の色(#AFC6F0)を30%の濃さにして使う
-const BLUE: Theme = {
-  text: "text-sub2",
-  field: "border-main2",
-  frame: "border-frame2",
-  arrow: "bg-main2",
-  hover: "enabled:hover:bg-frame2/30",
-};
-
-const HEADING = "text-2xl font-semibold";
-/** パネルの中の入力項目の見出し（曜日、提案する期間など）。text-xl = 20px */
-const LABEL = "text-xl font-semibold";
 /** 画面全体の外枠（入力画面と日程確定後の画面で共通） */
 const PAGE =
   "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-24 text-base md:pt-[168px] md:pb-[244px]";
 /** 結果画面。上に条件のパネルを置くので、md以上の上の余白は Figma に合わせて小さくする */
 const RESULT_PAGE = PAGE.replace("md:pt-[168px]", "md:pt-8");
-/** 入力欄。disabled のときは Figma の「not」色（灰色）になる */
-// aria-invalid="true" が付くと（未入力で出力しようとしたとき）枠が赤くなる
-const FIELD_BASE =
-  "rounded-[5px] border-2 bg-white px-4 py-2 text-text transition-colors disabled:cursor-not-allowed disabled:border-off disabled:text-off aria-invalid:border-error aria-invalid:ring-2 aria-invalid:ring-error/30";
 
-/** 入力欄の見た目。カーソルを乗せると背景が薄い緑/紺になる */
-function fieldClass(theme: Theme): string {
-  return `${FIELD_BASE} ${theme.field} ${theme.hover}`;
-}
-
-/** 2桁の数字の <option> を並べる（8 → "08"） */
-function numberOptions(values: number[], selected: number): string {
-  return values
-    .map((v) => `<option value="${v}" ${v === selected ? "selected" : ""}>${String(v).padStart(2, "0")}</option>`)
-    .join("");
-}
-
-/**
- * 右側に下向き矢印が付いたプルダウン。
- * peer を付けた select が disabled になると、後ろの矢印も灰色になる
- */
-function upDownSelect(theme: Theme, attrs: string, optionsHtml: string, disabled: boolean): string {
-  return `
-    <span class="relative flex items-center">
-      <select ${attrs} ${disabled ? "disabled" : ""} class="peer ${fieldClass(theme)} cursor-pointer appearance-none pr-8">
-        ${optionsHtml}
-      </select>
-      <span aria-hidden="true" class="icon-select-down pointer-events-none absolute right-3 ${theme.arrow} peer-disabled:bg-off"></span>
-    </span>
-  `;
-}
-
-/**
- * 時刻の選択。「時」「分」のプルダウン2つでできている。値は timePicker.ts の readTime で読む。
- * 開始(start)の data-minutes は「変更前の開始時刻」で、終了時刻を一緒にずらすときに使う
- */
-function timeSelect(theme: Theme, attrs: string, minutes: number, role: "start" | "end", disabled: boolean): string {
-  const label = role === "start" ? "開始" : "終了";
-  const roleAttrs = role === "start" ? `data-time-start data-minutes="${minutes}"` : "data-time-end";
-  return `
-    <span ${attrs} ${roleAttrs} class="flex items-center gap-1">
-      ${upDownSelect(theme, `data-part="hour" aria-label="${label}の時"`, numberOptions(HOUR_CHOICES, Math.floor(minutes / 60)), disabled)}
-      <span>:</span>
-      ${upDownSelect(theme, `data-part="minute" aria-label="${label}の分"`, numberOptions(MINUTE_CHOICES, minutes % 60), disabled)}
-    </span>
-  `;
-}
-
-/** パネルの見出しと説明 */
-function panelHeading(theme: Theme, title: string, description: string): string {
-  return `
-    <div class="flex flex-col gap-2">
-      <h3 class="${HEADING} ${theme.text}">${title}</h3>
-      <p>${description}</p>
-    </div>
-  `;
-}
-
-/**
- * 曜日ボタンが選ばれたときの色。平日は紺、土曜は青緑、日曜は赤（Figma の field_weekdays）。
- * 土日は濃い色が用意されていないので、マウスを乗せたときは brightness で少し暗くする
- */
-function weekdayPressedClass(weekday: number): string {
-  if (weekday === 6) {
-    return "aria-pressed:border-saturday aria-pressed:bg-saturday aria-pressed:hover:brightness-90";
-  }
-  if (weekday === 0) {
-    return "aria-pressed:border-sunday aria-pressed:bg-sunday aria-pressed:hover:brightness-90";
-  }
-  return "aria-pressed:bg-sub2 aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
-}
-
-/** 色付きの枠で囲んだパネルの外枠。className で高さの伸ばし方などを足せる */
-function panelFrame(theme: Theme, body: string, className = ""): string {
-  return `
-    <section class="flex flex-col gap-8 rounded-[15px] border-2 ${theme.frame} bg-white p-4 ${className}">
-      ${body}
-    </section>
-  `;
-}
-
-/** 色付きの枠で囲んだパネル（見出し＋説明＋中身） */
-function panel(theme: Theme, title: string, description: string, body: string, className = ""): string {
-  return panelFrame(theme, `${panelHeading(theme, title, description)}${body}`, className);
-}
-
-/**
- * 「こだわり条件」の選択肢1つ。選ばれていないときは文字が灰色になる。
- * label の中に入れた select などを押しても、ラジオは切り替わらない（押した部品の操作が優先される）
- */
-function preferenceRadio(value: Preference, label: string, checked: boolean): string {
-  return `
-    <label class="flex cursor-pointer items-center gap-4">
-      <input type="radio" name="preference" value="${value}" ${checked ? "checked" : ""} class="radio peer" />
-      <span class="text-hint peer-checked:text-text">${label}</span>
-    </label>
-  `;
-}
-
-/** 見出し付きの入力項目（曜日、時刻の範囲など） */
-function field(theme: Theme, label: string, body: string): string {
-  return `
-    <div class="flex flex-col gap-4">
-      <h4 class="${LABEL} ${theme.text}">${label}</h4>
-      ${body}
-    </div>
-  `;
-}
-
-/**
- * 「08:00 ~ 16:00」の入力欄。startAttrs / endAttrs はそれぞれの時刻の選択に付ける属性（id や data-key）。
- * data-time-range で囲むと、開始と終了が組として連動する
- */
-function timeRange(
-  theme: Theme,
-  startAttrs: string,
-  endAttrs: string,
-  start: number,
-  end: number,
-  disabled = false,
-  tildeClass = "",
-): string {
-  return `
-    <div data-time-range class="flex flex-wrap items-center gap-2">
-      ${timeSelect(theme, startAttrs, start, "start", disabled)}
-      <span class="${tildeClass}">~</span>
-      ${timeSelect(theme, endAttrs, end, "end", disabled)}
-    </div>
-  `;
-}
-
-/**
- * チェックボックス付きの除外ルール1行。チェックが入ると背景が薄緑になる。
- * data-exclusion-row があると、行の余白をクリックしてもチェックが切り替わる（main.ts）
- */
-function exclusionRow(toggleId: string, label: string, checked: boolean, details: string): string {
-  return `
-    <div data-exclusion-row class="flex cursor-pointer flex-col gap-4 rounded-[15px] p-4 md:px-8 md:py-6 has-[.checkbox:checked]:bg-pale hover:bg-pale">
-      <label class="flex cursor-pointer items-center gap-4">
-        <input id="${toggleId}" type="checkbox" class="checkbox peer" ${checked ? "checked" : ""} />
-        <span class="whitespace-nowrap peer-checked:font-semibold">${label}</span>
-      </label>
-      ${details}
-    </div>
-  `;
-}
-
-/** 下向き矢印付きのセレクトボックス（枠は外側で付ける）。attrs は select に付ける属性 */
-function dropdown(attrs: string, choices: string, extraClass = ""): string {
-  return `
-    <label class="relative flex items-center ${extraClass}">
-      <select ${attrs} class="peer w-full cursor-pointer appearance-none bg-transparent py-2 pr-8 pl-4 text-text transition-colors enabled:hover:bg-pale disabled:cursor-not-allowed disabled:text-off">
-        ${choices}
-      </select>
-      <span aria-hidden="true" class="icon-select-down pointer-events-none absolute right-3 bg-main peer-disabled:bg-off"></span>
-    </label>
-  `;
-}
-
-/** 除外ルールの入力行を並べる場所と「＋ 条件を追加」ボタン */
-function exclusionList(listId: string, addButtonId: string): string {
-  return `
-    <div class="flex flex-col items-center gap-4">
-      <div id="${listId}" class="flex flex-col gap-4"></div>
-      <button id="${addButtonId}" type="button" class="cursor-pointer rounded-[15px] bg-main transition-colors hover:bg-main px-[49px] py-2 text-white shadow-button disabled:cursor-not-allowed disabled:bg-off">
-        ＋ 条件を追加
-      </button>
-    </div>
-  `;
-}
-
-// ---------- 動的に増える部品 ----------
-
-/**
- * 行の右端の削除ボタン。行が1つしかないときは消せないようにし、
- * ボタンの代わりに同じ幅の空白を置いて行の位置がずれないようにする
- */
-function removeButton(removable: boolean, disabled: boolean): string {
-  if (!removable) return `<span class="size-8 shrink-0" aria-hidden="true"></span>`;
-  return `
-    <button type="button" data-action="remove" aria-label="この条件を削除" title="この条件を削除" ${disabled ? "disabled" : ""}
-      class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-main transition-colors hover:bg-main hover:text-white disabled:pointer-events-none">
-      ×
-    </button>
-  `;
-}
-
-/** 「日付を指定して除外」の入力1行分（「＋ 条件を追加」で増える） */
-export function dateExclusionRow(rule: DateExclusion, index: number, disabled: boolean, removable: boolean): string {
-  const off = disabled ? "disabled" : "";
-  return `
-    <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <input data-key="date" type="date" value="${rule.date}" ${off} class="${fieldClass(GREEN)} w-[262px] cursor-pointer text-center" />
-      <span>の</span>
-      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled, "text-sub")}
-      ${removeButton(removable, disabled)}
-    </div>
-  `;
-}
-
-/** 「曜日を指定して除外」の入力1行分（「＋ 条件を追加」で増える） */
-export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disabled: boolean, removable: boolean): string {
-  const off = disabled ? "disabled" : "";
-  const recurrences = RECURRENCE_CHOICES.map(
-    (c) => `<option value="${c.value}" ${c.value === rule.recurrence ? "selected" : ""}>${c.label}</option>`,
-  ).join("");
-  const weekdays = WEEKDAY_NAMES.map(
-    (name, i) => `<option value="${i}" ${i === rule.weekday ? "selected" : ""}>${name}曜日</option>`,
-  ).join("");
-  return `
-    <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <div class="flex items-center overflow-hidden rounded-[5px] border-2 border-main bg-white has-[:disabled]:border-off">
-        ${dropdown(`data-key="recurrence" ${off}`, recurrences, "border-r-[3px] border-dashed border-off")}
-        ${dropdown(`data-key="weekday" ${off}`, weekdays)}
-      </div>
-      <span>の</span>
-      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled)}
-      ${removeButton(removable, disabled)}
-    </div>
-  `;
-}
-
-// ---------- 日程確定後の画面（Figma のラフ案「出力タブ」の構成） ----------
-
-/** 候補の時間帯ボタン。main.ts で aria-pressed を切り替えて選択中の見た目にする */
-export const CANDIDATE_BUTTON =
-  "cursor-pointer rounded-[5px] border-2 border-main2 bg-white px-4 py-2 shadow-button transition-colors aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:border-sub2 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
-
-/** 候補日の表示方法を切り替えるタブ。選ばれているタブは紺の下線と文字になる */
-function resultTab(view: "buttons" | "timeline", label: string, panelId: string, selected: boolean): string {
-  return `
-    <button type="button" role="tab" id="tab-${view}" data-view="${view}" aria-controls="${panelId}"
-      aria-selected="${selected}" tabindex="${selected ? 0 : -1}"
-      class="-mb-0.5 cursor-pointer rounded-t-[5px] border-b-4 border-transparent px-6 py-2 text-hint transition-colors hover:bg-frame2/30 aria-selected:border-sub2 aria-selected:font-semibold aria-selected:text-sub2">
-      ${label}
-    </button>
-  `;
-}
-
-/**
- * タイムラインの候補ブロック。紺の枠で、選ぶと紺に塗りつぶされる（CANDIDATE_BUTTON と同じ配色）。
- * 後ろの罫線が透けないよう、乗せたときの色は半透明の frame2/30 ではなく不透明な pale2 にしている。
- * 位置と高さは main.ts で style に入れる
- */
-export const TIMELINE_CANDIDATE =
-  "absolute inset-x-1 cursor-pointer overflow-hidden rounded-[5px] border-2 border-main2 bg-white px-1 text-xs shadow-button transition-colors aria-[pressed=false]:hover:bg-pale2 aria-pressed:border-sub2 aria-pressed:bg-sub2 aria-pressed:font-semibold aria-pressed:text-white aria-pressed:hover:border-blue-950 aria-pressed:hover:bg-blue-950";
-
-/**
- * タイムラインのカレンダーの予定。「他の予定あり」の一覧と同じ、薄い緑(pale)の地に緑(sub)の線と文字。
- * pale は不透明な色なので、後ろの罫線は透けない
- */
-export const TIMELINE_EVENT =
-  "pointer-events-none absolute inset-x-1 overflow-hidden rounded-[5px] border-l-4 border-sub bg-pale px-1 text-xs text-sub";
+// ---------- 出力画面（Figma の 出力画面_タイムライン表示 / 出力画面_ボタン表示） ----------
 
 /** 「日程候補をまとめて出力」を押した後に表示する画面。最初は hidden で隠しておく */
 function resultView(): string {
@@ -333,14 +39,18 @@ function resultView(): string {
       <section aria-label="出力した条件" class="contents text-xs md:sticky md:top-0 md:z-20 md:-my-2 md:block md:w-full md:bg-white md:py-2">
         <div class="contents md:flex md:items-center md:justify-between md:gap-3 md:rounded-[10px] md:border-2 md:border-frame2 md:bg-white md:px-3 md:py-2">
           <div class="w-full rounded-[10px] border-2 border-frame2 bg-white px-3 py-2 text-xs md:w-auto md:min-w-0 md:flex-1 md:rounded-none md:border-0 md:bg-transparent md:p-0">
-            <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める） -->
-            <dl id="condition-summary" class="grid grid-cols-1 gap-x-8 gap-y-2 lg:grid-flow-col lg:grid-cols-2 lg:grid-rows-4"></dl>
+            <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める）。
+                 列の幅は半分ずつではなく中身の幅(max-content)にして、短い内容の右に空きができないようにする -->
+            <dl id="condition-summary" class="grid grid-cols-1 gap-x-6 gap-y-1 lg:grid-flow-col lg:grid-cols-[repeat(2,max-content)] lg:grid-rows-4"></dl>
           </div>
           <!-- スマホでは main の gap(52px) が効くので、-mt-10 で 12px にそろえる -->
-          <button id="back-button" type="button"
-            class="sticky top-2 z-20 -mt-10 w-full cursor-pointer rounded-[10px] border-2 border-sub2 bg-white px-3 py-2 text-xs font-semibold text-sub2 shadow-button transition-colors hover:bg-pale2 md:static md:mt-0 md:w-auto md:shrink-0">
-            条件を編集
-          </button>
+          ${buttonAction({
+            id: "back-button",
+            label: "条件を編集",
+            variant: "secondary",
+            size: "small",
+            className: "sticky top-2 z-20 -mt-10 w-full md:static md:mt-0 md:w-auto md:shrink-0",
+          })}
         </div>
       </section>
       <section class="flex w-full flex-col gap-8">
@@ -354,8 +64,8 @@ function resultView(): string {
           `<div class="flex flex-col gap-6">
             <!-- 表示方法の切り替え。選んだ候補は両方で共通（main.ts の showCandidateView） -->
             <div role="tablist" aria-label="候補日の表示方法" class="flex gap-2 border-b-2 border-frame2">
-              ${resultTab("buttons", "ボタン", "candidate-list", false)}
-              ${resultTab("timeline", "タイムライン", "candidate-timeline", true)}
+              ${tabCandidateView("buttons", "ボタン", "candidate-list", false)}
+              ${tabCandidateView("timeline", "タイムライン", "candidate-timeline", true)}
             </div>
             <div id="candidate-list" role="tabpanel" aria-labelledby="tab-buttons" hidden class="flex flex-col gap-6 px-0 md:px-8"></div>
             <!-- 横に日付、縦に時刻のタイムライン。日数が多いときは横にスクロールする -->
@@ -372,10 +82,7 @@ function resultView(): string {
             <textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
               class="${fieldClass(BLUE)} w-full resize-y leading-relaxed"></textarea>
             <div class="flex w-full flex-col items-center gap-2">
-              <button id="copy-button" type="button"
-                class="w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
-                文章をコピー
-              </button>
+              ${buttonAction({ id: "copy-button", label: "文章をコピー", variant: "primary", size: "large", className: "w-full" })}
               <span id="copy-status" role="status" class="text-main2"></span>
             </div>
           </div>`,
@@ -435,40 +142,15 @@ export function renderLayout(root: HTMLElement): void {
 
         ${panelFrame(
           GREEN,
-          `<div class="flex w-full flex-col items-center gap-2 lg:py-12">
-            <!-- 連携が済むと main.ts で data-connected が付き、薄い緑(base)の背景に緑の枠・文字になる。
-                 未連携のときも同じ色の枠を付けておき、切り替わってもボタンの大きさが変わらないようにする -->
-            <button id="calendar-connect" type="button"
-              class="w-full cursor-pointer rounded-[15px] border-2 border-sub bg-sub px-[59px] py-4 text-center font-semibold text-white shadow-button transition-colors hover:bg-green-900 disabled:cursor-wait disabled:opacity-70 data-connected:bg-pale data-connected:text-sub data-connected:hover:bg-frame/40">
-              <span id="calendar-status">Googleカレンダーと連携</span>
-            </button>
-            <!-- 連携中だけ表示する（main.ts の renderCalendarStatus） -->
-            <button id="calendar-disconnect" type="button" hidden
-              class="my-2 cursor-pointer rounded-[15px] bg-sub px-10 py-2 font-semibold text-white shadow-button transition-colors hover:bg-green-900">
-              解除する
-            </button>
-            <p class="text-sm text-sub">
-              <b>カレンダー内の予定が入っている時間</b>を読み込みます（予定タイトルなどの情報は読み込みません）
-            </p>
-          </div>
+          `${calendarConnect()}
           ${panelHeading(
             GREEN,
             "＋指定した日程を除外",
             "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
           )}
           <div class="flex flex-col gap-4">
-            ${exclusionRow(
-              "date-exclusion-toggle",
-              "日付を指定して除外",
-              false,
-              exclusionList("date-exclusion-list", "add-date-exclusion"),
-            )}
-            ${exclusionRow(
-              "weekday-exclusion-toggle",
-              "曜日を指定して除外",
-              false,
-              exclusionList("weekday-exclusion-list", "add-weekday-exclusion"),
-            )}
+            ${exclusionGroup("date-exclusion-toggle", "日付を指定して除外", "date-exclusion-list", "add-date-exclusion")}
+            ${exclusionGroup("weekday-exclusion-toggle", "曜日を指定して除外", "weekday-exclusion-list", "add-weekday-exclusion")}
           </div>`,
           "flex-1",
         )}
@@ -486,15 +168,9 @@ export function renderLayout(root: HTMLElement): void {
               BLUE,
               "曜日",
               `<!-- 2カラム(lg以上)では5列のグリッドにして、上段に月～金、下段に土日を並べる。
-                   日曜(i=0)だけ order-last で最後に回す。列の幅に収まるようボタンはマスいっぱいに広げる -->
+                   日曜は buttonWeekday の中で order-last にして最後に回す。列の幅に収まるようボタンはマスいっぱいに広げる -->
               <div class="flex flex-wrap gap-4 lg:grid lg:grid-cols-5">
-                ${WEEKDAY_NAMES.map(
-                  (name, i) => `
-                  <button type="button" data-weekday="${i}" aria-pressed="false"
-                    class="${i === 0 ? "lg:order-last" : ""} w-[76px] lg:w-auto cursor-pointer rounded-[5px] border-2 border-sub2 bg-white px-4 py-2 text-off shadow-button transition aria-[pressed=false]:hover:bg-frame2/30 aria-pressed:font-semibold aria-pressed:text-white ${weekdayPressedClass(i)}">
-                    ${name}
-                  </button>`,
-                ).join("")}
+                ${WEEKDAY_NAMES.map((_, i) => buttonWeekday(i)).join("")}
               </div>`,
             )}
             ${field(BLUE, "時刻の範囲", timeRange(BLUE, `id="day-start"`, `id="day-end"`, 8 * 60, 16 * 60))}
@@ -503,7 +179,7 @@ export function renderLayout(root: HTMLElement): void {
               "所要時間",
               `<div class="flex items-center gap-4">
                 <label class="flex items-center gap-2">
-                  ${upDownSelect(
+                  ${selectBox(
                     BLUE,
                     `id="duration-hours"`,
                     DURATION_HOUR_CHOICES.map((h) => `<option value="${h}" ${h === 1 ? "selected" : ""}>${h}</option>`).join(""),
@@ -512,7 +188,7 @@ export function renderLayout(root: HTMLElement): void {
                   時間
                 </label>
                 <label class="flex items-center gap-2">
-                  ${upDownSelect(BLUE, `id="duration-minutes"`, numberOptions(MINUTE_CHOICES, 0), false)}
+                  ${selectBox(BLUE, `id="duration-minutes"`, numberOptions(MINUTE_CHOICES, 0), false)}
                   分
                 </label>
               </div>`,
@@ -543,15 +219,16 @@ export function renderLayout(root: HTMLElement): void {
               BLUE,
               "こだわり条件",
               `<div class="flex flex-col gap-4">
-                ${preferenceRadio("none", "指定しない", true)}
-                ${preferenceRadio("freeDayOnly", "何も予定が入っていない日のみを提案", false)}
+                ${radioOption("preference", "none", "指定しない", true)}
+                ${radioOption("preference", "freeDayOnly", "何も予定が入っていない日のみを提案", false)}
                 <!-- 余裕の時間は「予定の前後に余裕」を選んだときだけ選べる（main.ts の renderPreference） -->
                 <!-- 文章の中にプルダウンを置き、入りきらないときだけ続きの文字を次の行へ流す。
                      keep-all で単語の途中では折り返さず、空白か <wbr> の位置でだけ改行する -->
-                ${preferenceRadio(
+                ${radioOption(
+                  "preference",
                   "buffer",
                   `<span class="break-keep">予定の<wbr>前後に
-                  <span class="mx-1 inline-flex align-middle">${upDownSelect(
+                  <span class="mx-1 inline-flex align-middle">${selectBox(
                     BLUE,
                     `id="buffer-minutes" aria-label="余裕の時間"`,
                     BUFFER_CHOICES.map(
@@ -593,10 +270,8 @@ export function renderLayout(root: HTMLElement): void {
         )}
       </section>
 
-      <button id="export-button" type="button"
-        class="h-[85px] w-full cursor-pointer rounded-[15px] bg-sub2 px-[59px] py-4 font-semibold text-white shadow-button transition-colors hover:bg-blue-950">
-        日程候補をまとめて出力
-      </button>
+      <!-- Figma の button_exportSchedule -->
+      ${buttonAction({ id: "export-button", label: "日程候補をまとめて出力", variant: "primary", size: "large", className: "h-[85px] w-full" })}
     </main>
 
     ${resultView()}

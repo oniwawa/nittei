@@ -2,16 +2,18 @@
 
 import "./style.css";
 import { formatDate, formatTime, formatWithTemplate, minutesToTime } from "./format";
+import { RECURRENCE_CHOICES, WEEKDAY_NAMES } from "./choices";
+import { dateExclusionRow, weekdayExclusionRow } from "./components/form";
 import {
-  CANDIDATE_BUTTON,
-  dateExclusionRow,
-  RECURRENCE_CHOICES,
-  renderLayout,
-  TIMELINE_CANDIDATE,
-  TIMELINE_EVENT,
-  WEEKDAY_NAMES,
-  weekdayExclusionRow,
-} from "./layout";
+  buttonCandidate,
+  buttonOtherEvents,
+  itemCondition,
+  listOtherEvents,
+  resizeHint,
+  timelineCandidate,
+  timelineEvent,
+} from "./components/result";
+import { renderLayout } from "./layout";
 import { connectGoogle, disconnectGoogle, fetchGoogleBusy, isConfigured, isConnected, loadGoogleScript } from "./google";
 import { exclusionSlots, findFreeSlots, upcomingDays } from "./slots";
 import { readTime, setUpTimePickers } from "./timePicker";
@@ -499,46 +501,6 @@ function eventsOn(date: Date): TimeSlot[] {
   return state.busy.filter((event) => event.start < dayEnd && event.end > dayStart);
 }
 
-/**
- * その日にカレンダーの予定があることを示すボタン。クリックで予定の一覧を開け閉めする。
- * day は開いている日を覚えておくためのキー（main.ts の candidateList のクリックで使う）
- */
-function otherEventsButton(day: string, count: number, expanded: boolean, listId: string): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className =
-    "cursor-pointer rounded-full border border-sub px-3 py-0.5 text-sm font-semibold text-sub transition-colors hover:bg-pale";
-  button.dataset.toggleDay = day;
-  button.setAttribute("aria-expanded", String(expanded));
-  button.setAttribute("aria-controls", listId);
-  button.textContent = `他の予定あり（${count}件）${expanded ? " ▲" : " ▼"}`;
-  return button;
-}
-
-/**
- * その日の予定を「10:00〜12:00 予定あり」のように並べた一覧。日をまたぐ予定はその日の分だけ表示する。
- * Google からは予定の名前を受け取らないので、何の予定かは出さない
- */
-function otherEventsList(events: TimeSlot[], date: Date, listId: string): HTMLUListElement {
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  const list = document.createElement("ul");
-  list.id = listId;
-  list.className = "flex flex-col gap-1 rounded-[5px] border-l-4 border-sub bg-pale px-4 py-2 text-sm text-sub";
-  for (const event of [...events].sort((x, y) => x.start.getTime() - y.start.getTime())) {
-    const allDay = event.start <= dayStart && event.end >= dayEnd;
-    const start = event.start < dayStart ? "0:00" : formatTime(event.start);
-    const end = event.end > dayEnd ? "24:00" : formatTime(event.end);
-    const item = document.createElement("li");
-    item.textContent = `${allDay ? "終日" : `${start}〜${end}`}　予定あり`;
-    list.append(item);
-  }
-  return list;
-}
-
 /** 候補日: 日付ごとにまとめて、時間帯のボタンを並べる */
 function renderCandidates(): void {
   const { slots, selected } = state.result;
@@ -573,23 +535,14 @@ function renderCandidates(): void {
     const events = eventsOn(slots[indexes[0]].start);
     const expanded = state.result.expandedDays.has(day);
     const listId = `other-events-${indexes[0]}`;
-    if (events.length > 0) heading.append(otherEventsButton(day, events.length, expanded, listId));
+    if (events.length > 0) heading.append(buttonOtherEvents(day, events.length, expanded, listId));
 
     const buttons = document.createElement("div");
     buttons.className = "flex flex-wrap gap-3";
-    for (const index of indexes) {
-      const slot = slots[index];
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = CANDIDATE_BUTTON;
-      button.dataset.index = String(index);
-      button.setAttribute("aria-pressed", String(selected.has(index)));
-      button.textContent = `${formatTime(slot.start)}〜${formatTime(slot.end)}`;
-      buttons.append(button);
-    }
+    for (const index of indexes) buttons.append(buttonCandidate(slots[index], index, selected.has(index)));
 
     group.append(heading);
-    if (events.length > 0 && expanded) group.append(otherEventsList(events, slots[indexes[0]].start, listId));
+    if (events.length > 0 && expanded) group.append(listOtherEvents(events, slots[indexes[0]].start, listId));
     group.append(buttons);
     return group;
   });
@@ -659,19 +612,7 @@ function renderConditionSummary(): void {
   ];
 
   conditionSummary.replaceChildren(
-    // 項目名と内容を1組ずつ div で包む（dl の中は div で区切ってよい）。md以上は横に並べる（Figma の item_condition を 12px 用に縮めたもの）
-    ...items.map(([label, values]) => {
-      const item = document.createElement("div");
-      item.className = "flex flex-col gap-0.5 md:flex-row md:gap-3";
-      const dt = document.createElement("dt");
-      dt.className = "font-semibold text-sub2 md:w-[108px] md:shrink-0";
-      dt.textContent = label;
-      const dd = document.createElement("dd");
-      dd.className = "whitespace-pre-line";
-      dd.textContent = values.join("\n");
-      item.append(dt, dd);
-      return item;
-    }),
+    ...items.map(([label, values]) => itemCondition(label, values)),
   );
 }
 
@@ -712,7 +653,35 @@ function onCandidateClick(event: MouseEvent, container: HTMLElement): void {
   renderCandidates();
   renderTimeline();
   renderResultMessage();
-  container.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus();
+  const clicked = container.querySelector<HTMLElement>(`[data-index="${index}"]`);
+  clicked?.focus();
+  if (clicked && container === candidateTimeline) showResizeHint(clicked);
+}
+
+/** 吹き出しを出しておく時間(ミリ秒) */
+const RESIZE_HINT_MS = 5000;
+/** 吹き出しを消すタイマー */
+let resizeHintTimer: number | undefined;
+/**
+ * 吹き出しをもう出したかどうか。変数(メモリ)に置くだけで、localStorage などには保存しない。
+ * そのため、ページを開き直す（再読み込みする）とまた1回出る
+ */
+let resizeHintShown = false;
+
+/**
+ * タイムラインの候補ブロックの上に「端をドラッグして時間を調節できます」を5秒だけ出す。
+ * ページを開いてから最初にクリックしたときの1回だけ出す。
+ * 吹き出しはブロックと同じ列に入れるので、5秒たつ前に別の候補をクリックすると renderTimeline の作り直しで一緒に消える
+ */
+function showResizeHint(button: HTMLElement): void {
+  if (resizeHintShown) return;
+  resizeHintShown = true;
+  clearTimeout(resizeHintTimer);
+  const column = button.parentElement;
+  if (!column) return;
+  const hint = resizeHint(parseFloat(button.style.top), parseFloat(button.style.height), column.clientHeight);
+  column.append(hint);
+  resizeHintTimer = window.setTimeout(() => hint.remove(), RESIZE_HINT_MS);
 }
 
 // ---------- 候補日の表示方法（ボタン / タイムライン） ----------
@@ -890,44 +859,19 @@ function renderTimeline(): void {
     body.style.backgroundImage = excluded ? `${hourLines}, ${hatch}` : hourLines;
     if (excluded) body.title = "候補にしない曜日";
 
-    // カレンダーの予定（薄い黄色）。クリックはできない
+    // カレンダーの予定（薄い緑）。クリックはできない
     for (const event of eventsOn(day)) {
       const { top, height } = place(day, event.start, event.end);
       if (height <= 0) continue; // 「時刻の範囲」の外の予定は描かない
-      const block = document.createElement("div");
-      block.className = TIMELINE_EVENT;
-      block.style.top = `${top}px`;
-      block.style.height = `${height}px`;
-      block.textContent = "他の予定あり";
-      body.append(block);
+      body.append(timelineEvent(top, height));
     }
 
     // 候補（紺の枠）。クリックで選ぶと紺に塗りつぶされる
     slots.forEach((slot, index) => {
       if (toDateValue(slot.start) !== toDateValue(day)) return;
       const { top, height } = place(day, slot.start, slot.end);
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = TIMELINE_CANDIDATE;
-      button.style.top = `${top}px`;
-      button.style.height = `${Math.max(height, 20)}px`;
-      button.dataset.index = String(index);
-      button.setAttribute("aria-pressed", String(selected.has(index)));
-      button.textContent = `${formatTime(slot.start)}〜${formatTime(slot.end)}`;
-      // 上端・下端のつまみ。ドラッグすると開始・終了の時刻を変えられる（startResize）。
-      // 乗せると細い線が出て、つかめる場所だと分かるようにする
-      for (const edge of ["start", "end"] as const) {
-        const handle = document.createElement("span");
-        handle.dataset.resize = edge;
-        handle.setAttribute("aria-hidden", "true");
-        handle.className = `group/handle absolute inset-x-0 h-2 cursor-ns-resize touch-none ${edge === "start" ? "top-0" : "bottom-0"}`;
-        const grip = document.createElement("span");
-        grip.className =
-          "absolute top-1/2 left-1/2 h-1 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current opacity-0 transition-opacity group-hover/handle:opacity-60";
-        handle.append(grip);
-        button.append(handle);
-      }
-      body.append(button);
+      // 短すぎる候補も押せるよう、高さは 20px 以上にする
+      body.append(timelineCandidate(slot, index, selected.has(index), top, Math.max(height, 20)));
     });
 
     column.append(header, body);
