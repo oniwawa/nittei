@@ -487,6 +487,7 @@ exportButton.addEventListener("click", async () => {
 
 /** 入力画面と日程確定後の画面を切り替える */
 function showView(view: "form" | "result"): void {
+  hideResizeHint();
   formView.hidden = view !== "form";
   resultView.hidden = view !== "result";
   window.scrollTo({ top: 0 });
@@ -660,8 +661,12 @@ function onCandidateClick(event: MouseEvent, container: HTMLElement): void {
 
 /** 吹き出しを出しておく時間(ミリ秒) */
 const RESIZE_HINT_MS = 5000;
+/** 吹き出しが透明になっていく時間(ミリ秒)。resizeHint の duration-1000 と合わせる */
+const RESIZE_HINT_FADE_MS = 1000;
 /** 吹き出しを消すタイマー */
 let resizeHintTimer: number | undefined;
+/** いま出ている吹き出し（出ていなければ undefined） */
+let currentResizeHint: HTMLDivElement | undefined;
 /**
  * 吹き出しをもう出したかどうか。変数(メモリ)に置くだけで、localStorage などには保存しない。
  * そのため、ページを開き直す（再読み込みする）とまた1回出る
@@ -669,24 +674,43 @@ let resizeHintTimer: number | undefined;
 let resizeHintShown = false;
 
 /**
- * タイムラインの候補ブロックの上に「端をドラッグして時間を調節できます」を5秒だけ出す。
+ * タイムラインの候補ブロックの上に「上/下をドラッグして時間を調節できます」を5秒だけ出す。
  * ページを開いてから最初にクリックしたときの1回だけ出す。
- * 吹き出しはブロックと同じ列に入れるので、5秒たつ前に別の候補をクリックすると renderTimeline の作り直しで一緒に消える
+ * 吹き出しは body に入れて、ブロックの少し上に置く（resizeHint）
  */
 function showResizeHint(button: HTMLElement): void {
   if (resizeHintShown) return;
   resizeHintShown = true;
   clearTimeout(resizeHintTimer);
-  const column = button.parentElement;
-  if (!column) return;
-  const hint = resizeHint(parseFloat(button.style.top), parseFloat(button.style.height), column.clientHeight);
-  column.append(hint);
-  resizeHintTimer = window.setTimeout(() => hint.remove(), RESIZE_HINT_MS);
+  const hint = resizeHint(button);
+  document.body.append(hint);
+  currentResizeHint = hint;
+  // 5秒たったら opacity-0 を付けて1秒かけて透明にし、消え終わったら取り除く
+  resizeHintTimer = window.setTimeout(() => {
+    hint.classList.add("opacity-0");
+    // 動きを付けない設定のときは transitionend が来ないので、時間でも取り除く
+    hint.addEventListener("transitionend", () => hint.remove(), { once: true });
+    window.setTimeout(() => hint.remove(), RESIZE_HINT_FADE_MS);
+  }, RESIZE_HINT_MS);
 }
+
+/**
+ * 吹き出しをすぐに消す。吹き出しは出したときのブロックの場所に置いたままなので、
+ * タイムラインを横にスクロールしたり、画面の幅が変わったり、表示を切り替えたりしてブロックが動いたら消す
+ */
+function hideResizeHint(): void {
+  clearTimeout(resizeHintTimer);
+  currentResizeHint?.remove();
+  currentResizeHint = undefined;
+}
+
+candidateTimeline.addEventListener("scroll", hideResizeHint);
+window.addEventListener("resize", hideResizeHint);
 
 // ---------- 候補日の表示方法（ボタン / タイムライン） ----------
 
 function showCandidateView(view: CandidateView): void {
+  hideResizeHint();
   state.candidateView = view;
   for (const tab of resultTabs) {
     const selected = tab.dataset.view === view;
