@@ -1,4 +1,4 @@
-// 「他の予定あり（〇件）」ボタン（Figma の button_otherEvents）
+// 「カレンダーの予定あり（〇件）」ボタン（Figma の button_otherEvents）
 
 /**
  * その日にカレンダーの予定があることを示すボタン（Figma の button_otherEvents）。クリックで予定の一覧を開け閉めする。
@@ -12,6 +12,6 @@ export function buttonOtherEvents(day: string, count: number, expanded: boolean,
   button.dataset.toggleDay = day;
   button.setAttribute("aria-expanded", String(expanded));
   button.setAttribute("aria-controls", listId);
-  button.textContent = `他の予定あり（${count}件）${expanded ? " ▲" : " ▼"}`;
+  button.textContent = `カレンダーの予定あり（${count}件）${expanded ? " ▲" : " ▼"}`;
   return button;
 }

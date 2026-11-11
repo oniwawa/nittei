@@ -92,6 +92,9 @@ const copyButton = getElement<HTMLButtonElement>("#copy-button");
 const copyStatus = getElement<HTMLSpanElement>("#copy-status");
 const conditionSummary = getElement<HTMLDListElement>("#condition-summary");
 const backButton = getElement<HTMLButtonElement>("#back-button");
+const conditionsBar = getElement<HTMLElement>("#conditions-bar");
+const conditionsToggle = getElement<HTMLButtonElement>("#conditions-toggle");
+const conditionsToggleLabel = getElement<HTMLSpanElement>("#conditions-toggle-label");
 
 // ---------- アプリの状態(state) ----------
 
@@ -109,7 +112,7 @@ interface AppState {
     selected: Set<number>;
     /** 出力したときの「出力文章の形式」 */
     template: string;
-    /** 「他の予定あり」を開いて、予定の一覧を表示している日（"11/10(火)" の形） */
+    /** 「カレンダーの予定あり」を開いて、予定の一覧を表示している日（"11/10(火)" の形） */
     expandedDays: Set<string>;
     /** 出力したときの条件（タイムラインの日付と時刻の範囲に使う） */
     options: SearchOptions;
@@ -618,7 +621,7 @@ function renderConditionSummary(): void {
 }
 
 candidateList.addEventListener("click", (event) => {
-  // 「他の予定あり」: その日の予定の一覧を開け閉めする
+  // 「カレンダーの予定あり」: その日の予定の一覧を開け閉めする
   const toggle = (event.target as HTMLElement).closest<HTMLElement>("[data-toggle-day]");
   if (toggle) {
     const day = toggle.dataset.toggleDay ?? "";
@@ -707,7 +710,7 @@ function hideResizeHint(): void {
 candidateTimeline.addEventListener("scroll", hideResizeHint);
 window.addEventListener("resize", hideResizeHint);
 
-// ---------- 候補日の表示方法（ボタン / タイムライン） ----------
+// ---------- 候補日の表示方法（一覧 / タイムライン） ----------
 
 function showCandidateView(view: CandidateView): void {
   hideResizeHint();
@@ -921,6 +924,27 @@ copyButton.addEventListener("click", async () => {
 });
 
 backButton.addEventListener("click", () => showView("form"));
+
+// ---------- 上に固定した条件のたたみ / 表示 ----------
+
+/**
+ * 条件の一覧をたたんでいるか。たたむと「条件を編集」と「選択した条件を表示」だけが残る。
+ * 開いていると候補日が見える範囲が狭くなるので、画面の幅にかかわらず最初はたたんでおく
+ */
+let conditionsCollapsed = true;
+
+/** たたんでいるかどうかに合わせて、section の data-collapsed とボタンの文字・aria-expanded を変える */
+function renderConditionsCollapsed(): void {
+  conditionsBar.toggleAttribute("data-collapsed", conditionsCollapsed);
+  conditionsToggleLabel.textContent = conditionsCollapsed ? "選択した条件を表示" : "表示をたたむ";
+  conditionsToggle.setAttribute("aria-expanded", String(!conditionsCollapsed));
+}
+
+conditionsToggle.addEventListener("click", () => {
+  conditionsCollapsed = !conditionsCollapsed;
+  renderConditionsCollapsed();
+});
+renderConditionsCollapsed();
 
 // ---------- 起動 ----------
 

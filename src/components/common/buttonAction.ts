@@ -5,6 +5,7 @@
  * - variant: primary = 紺の塗りつぶし、secondary = 白地に紺の枠
  * - size: large = 画面幅いっぱいの大きいボタン、small = 条件パネルの中の小さいボタン（12px）
  * - className: 幅・高さ・固定(sticky)など、置く場所ごとの指定を足す
+ * - attrs: aria-expanded など、button に付けるほかの属性
  */
 export function buttonAction(options: {
   id: string;
@@ -12,6 +13,7 @@ export function buttonAction(options: {
   variant: "primary" | "secondary";
   size: "large" | "small";
   className?: string;
+  attrs?: string;
 }): string {
   const variant =
     options.variant === "primary"
@@ -19,7 +21,7 @@ export function buttonAction(options: {
       : "border-2 border-sub2 bg-white text-sub2 hover:bg-pale2";
   const size = options.size === "large" ? "rounded-[15px] px-[59px] py-4" : "rounded-[10px] px-3 py-2 text-xs";
   return `
-    <button id="${options.id}" type="button"
+    <button id="${options.id}" type="button" ${options.attrs ?? ""}
       class="cursor-pointer font-semibold shadow-button transition-colors ${variant} ${size} ${options.className ?? ""}">
       ${options.label}
     </button>

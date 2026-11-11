@@ -29,42 +29,41 @@ const RESULT_PAGE = PAGE.replace("md:pt-[168px]", "md:pt-8");
 function resultView(): string {
   return `
     <main id="result-view" hidden class="${RESULT_PAGE}">
-      <!-- 出力した条件と「条件を編集」ボタン。画面のいちばん上に置き、スクロールしても上に残す（Figma の section_conditions）。
-           md以上: 外側の section を sticky で固定し、白い背景で下を流れる候補日を隠す。
-                   上下の py-2 は固定されたときの余白で、-my-2 で固定前の位置がずれないよう打ち消している。
-                   中の div が枠付きのパネルになり、左に条件、右にボタンを並べる。
-           スマホ: 全部固定すると画面がほぼ埋まるので、「条件を編集」ボタンだけ固定する。
-                   sticky は親の箱の中でしか効かないので、外側の section と中の div を contents にして
-                   ボタンを main の直接の子として扱い、main の中で固定させる。枠は条件の箱のほうに付ける -->
-      <section aria-label="出力した条件" class="contents text-xs md:sticky md:top-0 md:z-20 md:-my-2 md:block md:w-full md:bg-white md:py-2">
-        <div class="contents md:flex md:items-center md:justify-between md:gap-3 md:rounded-[10px] md:border-2 md:border-frame2 md:bg-white md:px-3 md:py-2">
-          <div class="w-full rounded-[10px] border-2 border-frame2 bg-white px-3 py-2 text-xs md:w-auto md:min-w-0 md:flex-1 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+      <!-- 出力した条件と「条件を編集」ボタン（Figma の panel_conditionSummary）。
+           画面のいちばん上に置き、スクロールしても上に残す。外側の section を sticky で固定し、白い背景で下を流れる候補日を隠す。
+           上下の py-2 は固定されたときの余白で、-my-2 で固定前の位置がずれないよう打ち消している。
+           パネルの中は上から「条件を編集」→ 条件の一覧 → 「表示をたたむ」。
+           たたむと section に data-collapsed が付き（main.ts の renderConditionsCollapsed）、条件の一覧だけを隠す -->
+      <section id="conditions-bar" aria-label="出力した条件" class="group sticky top-0 z-20 -my-2 w-full bg-white py-2">
+        <div class="flex flex-col gap-2 rounded-[10px] border-2 border-frame2 bg-white px-3 py-2 text-xs">
+          ${buttonAction({ id: "back-button", label: "条件を編集", variant: "secondary", size: "small", className: "w-full" })}
+          <div id="condition-summary-box" class="group-data-collapsed:hidden">
             <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める）。
                  列の幅は半分ずつではなく中身の幅(max-content)にして、短い内容の右に空きができないようにする -->
             <dl id="condition-summary" class="grid grid-cols-1 gap-x-6 gap-y-1 lg:grid-flow-col lg:grid-cols-[repeat(2,max-content)] lg:grid-rows-4"></dl>
           </div>
-          <!-- スマホでは main の gap(52px) が効くので、-mt-10 で 12px にそろえる -->
-          ${buttonAction({
-            id: "back-button",
-            label: "条件を編集",
-            variant: "secondary",
-            size: "small",
-            className: "sticky top-2 z-20 -mt-10 w-full md:static md:mt-0 md:w-auto md:shrink-0",
-          })}
+          <!-- 開け閉めのリンク風ボタン。文字は main.ts が「表示をたたむ」/「選択した条件を表示」に切り替える。
+               カーソルを乗せると文字も矢印も濃い紺(sub2)になり、文字に下線が付く（矢印には付けない）。
+               矢印は下向きの形(style.css の icon-chevron-down)で、開いているときだけ上下反転(-scale-y-100)して上向きにする -->
+          <button id="conditions-toggle" type="button" aria-expanded="true" aria-controls="condition-summary-box"
+            class="group/toggle flex cursor-pointer items-center gap-1 self-start font-medium text-sub2 transition-colors hover:text-main2">
+            <span id="conditions-toggle-label" class="group-hover/toggle:underline">表示をたたむ</span>
+            <span aria-hidden="true" class="icon-chevron-down bg-current -scale-y-100 group-data-collapsed:scale-y-100"></span>
+          </button>
         </div>
       </section>
       <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub2">提案する日程の候補</h2>
+        <h2 class="${HEADING} text-sub2">提案日程を選ぶ</h2>
 
         ${panel(
           BLUE,
           "候補日",
-          `相手に提案したい日時をクリックして選んでください。<strong class="font-semibold text-sub2">いくつでも選べます</strong><br />
+          `提案したい日時をクリックして選んでください。複数選択できます。<br />
           <span id="result-summary" class="text-main2"></span>`,
           `<div class="flex flex-col gap-6">
             <!-- 表示方法の切り替え。選んだ候補は両方で共通（main.ts の showCandidateView） -->
             <div role="tablist" aria-label="候補日の表示方法" class="flex gap-2 border-b-2 border-frame2">
-              ${tabCandidateView("buttons", "ボタン", "candidate-list", false)}
+              ${tabCandidateView("buttons", "一覧", "candidate-list", false)}
               ${tabCandidateView("timeline", "タイムライン", "candidate-timeline", true)}
             </div>
             <div id="candidate-list" role="tabpanel" aria-labelledby="tab-buttons" hidden class="flex flex-col gap-6 px-0 md:px-8"></div>
@@ -76,7 +75,7 @@ function resultView(): string {
         ${panel(
           BLUE,
           "出力文",
-          "選んだ候補日が「出力文章の形式」で並びます。コピーする前に書き換えることもできます",
+          "候補日を選択すると文章が出力されます。候補日は日付の早い順に並びます。",
           `<!-- コピーのボタンは出力文の枠の中、文章のすぐ下に置く -->
           <div class="flex flex-col gap-4">
             <textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
@@ -115,12 +114,12 @@ function siteFooter(): string {
     <footer class="border-t-2 border-frame2 bg-white">
       <div class="mx-auto flex max-w-[1075px] flex-col gap-3 px-4 py-6 text-sm">
         <p>
-          にっていじは、Googleカレンダーの「予定が入っている時間帯」だけを読み込み、相手に提案する複数の日程候補をまとめて作るアプリです。
-          予定の名前・場所・参加者などは読み込まず、読み込んだ情報はブラウザの中だけで使い、保存しません。
+          にっていじは、Googleカレンダーの「予定が入っている時間帯」の情報を使用し、日程を提出する文章を出力するアプリです。
+          「予定が入っている時間帯」の情報はブラウザの中だけで使い、保存されることはありません。また、カレンダーの予定の詳細情報（予定の名前・場所・参加者など）は使用しません。
         </p>
         <nav class="flex flex-wrap gap-6">
-          <a href="/privacy.html" class="text-sub2 underline hover:text-blue-950">プライバシーポリシー</a>
-          <a href="/terms.html" class="text-sub2 underline hover:text-blue-950">利用規約</a>
+          <a href="/privacy.html" class="font-medium text-main2 underline transition-colors hover:text-sub2">プライバシーポリシー</a>
+          <a href="/terms.html" class="font-medium text-main2 underline transition-colors hover:text-sub2">利用規約</a>
         </nav>
         <p class="text-hint">© 2026 にっていじ</p>
       </div>

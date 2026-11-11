@@ -51,6 +51,13 @@
     height: 7px;
     mask: url("./assets/icon-select-down.svg") center / contain no-repeat;
   }
+  /* 条件の一覧を開け閉めする矢印（Figma の Vector 2。下向き）。icon-select-down と同じく mask で切り抜き、
+     bg-current で文字と同じ色に塗る。カーソルを乗せて文字が濃くなると、矢印も一緒に濃くなる */
+  .icon-chevron-down {
+    width: 10px;
+    height: 7px;
+    mask: url("./assets/chevron-down.svg") center / contain no-repeat;
+  }
   /* Figma のラジオボタン。未選択は紺の丸枠だけ、選択中は Figma から書き出した画像 */
   .radio {
     appearance: none;
