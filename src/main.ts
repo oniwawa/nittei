@@ -17,7 +17,7 @@ import { renderLayout } from "./layout";
 import { connectGoogle, disconnectGoogle, fetchGoogleBusy, isConfigured, isConnected, loadGoogleScript } from "./google";
 import { exclusionSlots, findFreeSlots, upcomingDays } from "./slots";
 import { readTime, setUpTimePickers } from "./timePicker";
-import type { DateExclusion, Preference, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
+import type { DateExclusion, ExclusionMode, Preference, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
 // ---------- 画面の部品を取得 ----------
 
@@ -53,10 +53,10 @@ const calendarStatus = getElement<HTMLSpanElement>("#calendar-status");
 const calendarDisconnectButton = getElement<HTMLButtonElement>("#calendar-disconnect");
 
 // 指定した日程を除外
-const dateExclusionToggle = getElement<HTMLInputElement>("#date-exclusion-toggle");
+const exclusionModeSelect = getElement<HTMLSelectElement>("#exclusion-mode");
+const exclusionGroups = [...document.querySelectorAll<HTMLElement>("[data-exclusion-mode]")];
 const dateExclusionList = getElement<HTMLDivElement>("#date-exclusion-list");
 const addDateExclusionButton = getElement<HTMLButtonElement>("#add-date-exclusion");
-const weekdayExclusionToggle = getElement<HTMLInputElement>("#weekday-exclusion-toggle");
 const weekdayExclusionList = getElement<HTMLDivElement>("#weekday-exclusion-list");
 const addWeekdayExclusionButton = getElement<HTMLButtonElement>("#add-weekday-exclusion");
 
@@ -209,11 +209,20 @@ function readPreference(): Preference {
   return (preferenceRadios.find((radio) => radio.checked)?.value ?? "none") as Preference;
 }
 
-/** チェックが入っている除外ルールだけを返す */
+/** 「指定した日程を除外」のプルダウンで選んでいるもの */
+function readExclusionMode(): ExclusionMode {
+  return exclusionModeSelect.value as ExclusionMode;
+}
+
+/**
+ * プルダウンで選んでいるほうの除外ルールだけを返す。
+ * 選んでいないほうに入力したルールは消さずに残しておくが（切り替えて戻ると元どおり）、計算には使わない
+ */
 function activeExclusions(): { dates: DateExclusion[]; weekdays: WeekdayExclusion[] } {
+  const mode = readExclusionMode();
   return {
-    dates: dateExclusionToggle.checked ? state.dateExclusions : [],
-    weekdays: weekdayExclusionToggle.checked ? state.weekdayExclusions : [],
+    dates: mode === "date" ? state.dateExclusions : [],
+    weekdays: mode === "weekday" ? state.weekdayExclusions : [],
   };
 }
 
@@ -235,22 +244,25 @@ function renderCalendarStatus(calendarCount?: number): void {
   calendarDisconnectButton.hidden = !connected;
 }
 
+/** プルダウンで選んだほうの入力欄だけを表示する */
+function renderExclusionMode(): void {
+  const mode = readExclusionMode();
+  for (const group of exclusionGroups) group.hidden = group.dataset.exclusionMode !== mode;
+}
+
+// 選ばれていないほうは隠すので、入力欄はいつも選べる状態(disabled = false)で作る
 function renderDateExclusions(): void {
-  const disabled = !dateExclusionToggle.checked;
   const removable = state.dateExclusions.length > 1; // 最後の1行は消せない
   dateExclusionList.innerHTML = state.dateExclusions
-    .map((rule, index) => dateExclusionRow(rule, index, disabled, removable))
+    .map((rule, index) => dateExclusionRow(rule, index, false, removable))
     .join("");
-  addDateExclusionButton.disabled = disabled;
 }
 
 function renderWeekdayExclusions(): void {
-  const disabled = !weekdayExclusionToggle.checked;
   const removable = state.weekdayExclusions.length > 1;
   weekdayExclusionList.innerHTML = state.weekdayExclusions
-    .map((rule, index) => weekdayExclusionRow(rule, index, disabled, removable))
+    .map((rule, index) => weekdayExclusionRow(rule, index, false, removable))
     .join("");
-  addWeekdayExclusionButton.disabled = disabled;
 }
 
 function renderWeekdays(): void {
@@ -328,17 +340,7 @@ function setUpExclusionList<T>(
   });
 }
 
-dateExclusionToggle.addEventListener("change", renderDateExclusions);
-weekdayExclusionToggle.addEventListener("change", renderWeekdayExclusions);
-
-// 除外ルールの行は、余白など何も無いところをクリックしてもチェックを切り替える。
-// 日付・時刻・ボタンなど操作できる部品や、チェックボックスの見出し(label)のクリックはそちらに任せる
-for (const toggle of [dateExclusionToggle, weekdayExclusionToggle]) {
-  toggle.closest("[data-exclusion-row]")?.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest("input, select, button, label, textarea")) return;
-    toggle.click(); // click() だと change イベントも発生し、上の render が呼ばれる
-  });
-}
+exclusionModeSelect.addEventListener("change", renderExclusionMode);
 
 setUpExclusionList(dateExclusionList, addDateExclusionButton, state.dateExclusions, newDateExclusion, renderDateExclusions);
 setUpExclusionList(
@@ -422,7 +424,7 @@ function showToast(message: string): void {
  */
 function findMissingInputs(): HTMLInputElement[] {
   const missing: HTMLInputElement[] = [];
-  if (dateExclusionToggle.checked) {
+  if (readExclusionMode() === "date") {
     const dates = dateExclusionList.querySelectorAll<HTMLInputElement>('input[data-key="date"]');
     missing.push(...[...dates].filter((input) => !input.value));
   }
@@ -979,6 +981,7 @@ async function init(): Promise<void> {
     calendarStatus.textContent = "Googleカレンダー連携は未設定です（.env.local に VITE_GOOGLE_CLIENT_ID を設定）";
     calendarConnectButton.disabled = true;
   }
+  renderExclusionMode();
   renderDateExclusions();
   renderWeekdayExclusions();
   renderWeekdays();

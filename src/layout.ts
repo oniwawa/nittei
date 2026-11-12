@@ -8,6 +8,7 @@ import {
   buttonWeekday,
   calendarConnect,
   exclusionGroup,
+  exclusionModeSelect,
   field,
   numberOptions,
   radioOption,
@@ -148,8 +149,10 @@ export function renderLayout(root: HTMLElement): void {
             "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
           )}
           <div class="flex flex-col gap-4">
-            ${exclusionGroup("date-exclusion-toggle", "日付を指定して除外", "date-exclusion-list", "add-date-exclusion")}
-            ${exclusionGroup("weekday-exclusion-toggle", "曜日を指定して除外", "weekday-exclusion-list", "add-weekday-exclusion")}
+            <!-- まずプルダウンで日付か曜日かを選び、選んだほうの入力欄だけを出す -->
+            ${exclusionModeSelect()}
+            ${exclusionGroup("date", "date-exclusion-list", "add-date-exclusion")}
+            ${exclusionGroup("weekday", "weekday-exclusion-list", "add-weekday-exclusion")}
           </div>`,
           "flex-1",
         )}

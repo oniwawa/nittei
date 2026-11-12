@@ -35,6 +35,14 @@ export interface SearchOptions {
  */
 export type Preference = "none" | "freeDayOnly" | "buffer";
 
+/**
+ * 「指定した日程を除外」のプルダウンで選んでいるもの。日付と曜日はどちらか一方だけ使える
+ * - none: 除外しない
+ * - date: 日付を指定して除外
+ * - weekday: 曜日を指定して除外
+ */
+export type ExclusionMode = "none" | "date" | "weekday";
+
 /** 「日付を指定して除外」の1行分 */
 export interface DateExclusion {
   /** <input type="date"> の値（"2026-11-11"）。未入力なら空文字 */
