@@ -73,7 +73,8 @@ function resultView(): string {
               ${tabCandidateView("buttons", "一覧", "candidate-list", false)}
               ${tabCandidateView("timeline", "タイムライン", "candidate-timeline", true)}
             </div>
-            <div id="candidate-list" role="tabpanel" aria-labelledby="tab-buttons" hidden class="flex flex-col gap-6 px-0 md:px-8"></div>
+            <!-- 一覧の高さはタイムラインと同じにして（main.ts の renderTimeline が style.height を入れる）、はみ出した分は箱の中でスクロールする -->
+            <div id="candidate-list" role="tabpanel" aria-labelledby="tab-buttons" hidden class="flex flex-col gap-6 overflow-y-auto px-0 pb-2 md:px-8"></div>
             <!-- 横に日付、縦に時刻のタイムライン。日数が多いときは横にスクロールする -->
             <div id="candidate-timeline" role="tabpanel" aria-labelledby="tab-timeline" class="overflow-x-auto"></div>
           </div>`,
@@ -174,9 +175,10 @@ export function renderLayout(root: HTMLElement): void {
             ${field(
               BLUE,
               "曜日",
-              `<!-- 2カラム(lg以上)では5列のグリッドにして、上段に月～金、下段に土日を並べる。
-                   日曜は buttonWeekday の中で order-last にして最後に回す。列の幅に収まるようボタンはマスいっぱいに広げる -->
-              <div class="flex flex-wrap gap-4 lg:grid lg:grid-cols-5">
+              `<!-- どの画面幅でも5列のグリッドにして、上段に月～金、下段に土日を並べる。
+                   日曜は buttonWeekday の中で order-last にして最後に回す。ボタンはマスいっぱいに広げる。
+                   スマホでは間を 8px に詰めて1行に収める。広い画面でボタンが横に伸びすぎないよう、幅は 444px（76px × 5 + 間）まで -->
+              <div class="grid w-full max-w-[444px] grid-cols-5 gap-2 md:gap-4">
                 ${WEEKDAY_NAMES.map((_, i) => buttonWeekday(i)).join("")}
               </div>`,
             )}

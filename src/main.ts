@@ -461,6 +461,7 @@ function eventsOn(date: Date): TimeSlot[] {
 function renderCandidates(): void {
   const { slots, selected } = state.result;
   resultSummary.textContent = `${slots.length}件の候補のうち ${selected.size}件を選択中`;
+  syncRandomCount(); // 「ランダムで [〇] 件選択」の数字も、選んでいる件数に合わせる
 
   if (slots.length === 0) {
     const empty = document.createElement("p");
@@ -508,14 +509,20 @@ function renderCandidates(): void {
 
 // ---------- ランダムで選ぶ ----------
 
-/**
- * 「ランダムで [〇] 件選択」の件数の上限と最初の値を、候補の数に合わせる。出力するたびに呼ぶ。
- * 最初の値は 3 件（候補が 3 件より少なければ全部）。候補が無いときはボタンごと隠す
- */
+/** 「ランダムで [〇] 件選択」を、候補が無いときはボタンごと隠す。出力するたびに呼ぶ */
 function renderRandomSelect(): void {
   const total = state.result.slots.length;
   for (const box of randomSelectBoxes) box.hidden = total === 0;
-  setRandomCount(Math.min(3, total));
+  syncRandomCount();
+}
+
+/**
+ * 件数の数字を、いま選ばれている候補の数にそろえる。選択が変わるたびに renderCandidates から呼ぶ。
+ * 1件も選んでいないときは、最初の値の 3 件（候補が 3 件より少なければ全部）にしておく
+ */
+function syncRandomCount(): void {
+  const { slots, selected } = state.result;
+  setRandomCount(selected.size > 0 ? selected.size : Math.min(3, slots.length));
 }
 
 /** 2か所の件数の入力欄を、同じ数字にそろえる */
@@ -754,6 +761,54 @@ for (const tab of resultTabs) {
   });
 }
 
+// ---------- スマホ: 横にスワイプして 一覧 ⇔ タイムライン を切り替える ----------
+
+/** スマホ（md = 幅768px 未満）かどうか。画面を回して幅が変わっても追いかけられるよう、毎回 matches を見る */
+const mobileQuery = window.matchMedia("(max-width: 767px)");
+/** スワイプとみなす横の移動距離(px)。これより短い動きはタップや縦スクロールの揺れとして無視する */
+const SWIPE_MIN_DISTANCE = 60;
+
+/**
+ * 指を離したとき、横に大きく動いていたら表示を切り替える。タブの並び（一覧 | タイムライン）に合わせて、
+ * - 一覧で左へスワイプ → タイムライン（右のタブ）
+ * - タイムラインで右へスワイプ → 一覧（左のタブ）
+ * タイムラインは横にスクロールできるので、右へのスワイプは「左端までスクロールしてあるとき」だけ切り替える。
+ * それ以外はふつうのスクロールにまかせる
+ */
+function setUpSwipe(panel: HTMLElement, view: CandidateView): void {
+  let startX = 0;
+  let startY = 0;
+  let atLeftEdge = true;
+  let tracking = false;
+
+  panel.addEventListener(
+    "touchstart",
+    (event) => {
+      // 1本指のときだけ。タイムラインのつまみ（長さを変えるドラッグ）を触ったときは切り替えない
+      tracking = mobileQuery.matches && event.touches.length === 1 && !(event.target as HTMLElement).closest("[data-resize]");
+      if (!tracking) return;
+      startX = event.touches[0].clientX;
+      startY = event.touches[0].clientY;
+      atLeftEdge = panel.scrollLeft <= 0;
+    },
+    { passive: true }, // 縦スクロールを止めないことをブラウザに伝え、スクロールを軽くする
+  );
+
+  panel.addEventListener("touchend", (event) => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = event.changedTouches[0].clientX - startX;
+    const dy = event.changedTouches[0].clientY - startY;
+    // 横の動きが短い、または縦の動きのほうが大きい（縦スクロール）ときは何もしない
+    if (Math.abs(dx) < SWIPE_MIN_DISTANCE || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (view === "buttons" && dx < 0) showCandidateView("timeline");
+    if (view === "timeline" && dx > 0 && atLeftEdge) showCandidateView("buttons");
+  });
+}
+
+setUpSwipe(candidateList, "buttons");
+setUpSwipe(candidateTimeline, "timeline");
+
 /** タイムラインの1時間あたりの高さ(px) */
 const HOUR_HEIGHT = 48;
 
@@ -849,6 +904,8 @@ function renderTimeline(): void {
   const firstHour = Math.floor(options.dayStartMinutes / 60);
   const lastHour = Math.max(Math.ceil(options.dayEndMinutes / 60), firstHour + 1);
   const bodyHeight = (lastHour - firstHour) * HOUR_HEIGHT;
+  // 一覧の高さを、タイムライン全体（日付の見出し 48px ＋ 時刻の部分）と同じにする。中身が多いときは一覧の中でスクロールする
+  candidateList.style.height = `${48 + bodyHeight}px`;
 
   /** day の 0:00 から date まで何分あるか */
   const minutesOf = (day: Date, date: Date) => {
