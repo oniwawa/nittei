@@ -1,4 +1,4 @@
-// 除外ルールの入力1行分（Figma の row_dateExclusion / row_weekdayExclusion）。「＋ 条件を追加」のたびに main.ts から呼ばれる
+// 除外ルールの入力行（Figma の row_dateExclusion / row_weekdayExclusion）。exclusionCard の中に入る
 
 import { RECURRENCE_CHOICES, WEEKDAY_NAMES } from "../../choices";
 import type { DateExclusion, WeekdayExclusion } from "../../types";
@@ -17,36 +17,19 @@ function bareSelect(attrs: string, choices: string, extraClass = ""): string {
   `;
 }
 
-/**
- * 行の右端の削除ボタン。行が1つしかないときは消せないようにし、
- * ボタンの代わりに同じ幅の空白を置いて行の位置がずれないようにする
- */
-function removeButton(removable: boolean, disabled: boolean): string {
-  if (!removable) return `<span class="size-8 shrink-0" aria-hidden="true"></span>`;
+/** 「日付を指定して除外」の入力行（日付 の 08:00 ~ 16:00） */
+export function dateExclusionRow(rule: DateExclusion): string {
   return `
-    <button type="button" data-action="remove" aria-label="この条件を削除" title="この条件を削除" ${disabled ? "disabled" : ""}
-      class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-main transition-colors hover:bg-main hover:text-white disabled:pointer-events-none">
-      ×
-    </button>
-  `;
-}
-
-/** 「日付を指定して除外」の入力1行分（Figma の row_dateExclusion。「＋ 条件を追加」で増える） */
-export function dateExclusionRow(rule: DateExclusion, index: number, disabled: boolean, removable: boolean): string {
-  const off = disabled ? "disabled" : "";
-  return `
-    <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <input data-key="date" type="date" value="${rule.date}" ${off} class="${fieldClass(GREEN)} w-[262px] cursor-pointer text-center" />
+    <div class="flex flex-wrap items-center gap-4">
+      <input data-key="date" type="date" value="${rule.date}" aria-label="除外する日付" class="${fieldClass(GREEN)} w-[262px] cursor-pointer text-center" />
       <span>の</span>
-      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled, "text-sub")}
-      ${removeButton(removable, disabled)}
+      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, false, "text-sub")}
     </div>
   `;
 }
 
-/** 「曜日を指定して除外」の入力1行分（Figma の row_weekdayExclusion。「＋ 条件を追加」で増える） */
-export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disabled: boolean, removable: boolean): string {
-  const off = disabled ? "disabled" : "";
+/** 「曜日を指定して除外」の入力行（毎週 月曜日 の 08:00 ~ 16:00） */
+export function weekdayExclusionRow(rule: WeekdayExclusion): string {
   const recurrences = RECURRENCE_CHOICES.map(
     (c) => `<option value="${c.value}" ${c.value === rule.recurrence ? "selected" : ""}>${c.label}</option>`,
   ).join("");
@@ -54,14 +37,13 @@ export function weekdayExclusionRow(rule: WeekdayExclusion, index: number, disab
     (name, i) => `<option value="${i}" ${i === rule.weekday ? "selected" : ""}>${name}曜日</option>`,
   ).join("");
   return `
-    <div data-index="${index}" class="flex flex-wrap items-center gap-4">
-      <div class="flex items-center overflow-hidden rounded-[5px] border-2 border-main bg-white has-[:disabled]:border-off">
-        ${bareSelect(`data-key="recurrence" ${off}`, recurrences, "border-r-[3px] border-dashed border-off")}
-        ${bareSelect(`data-key="weekday" ${off}`, weekdays)}
+    <div class="flex flex-wrap items-center gap-4">
+      <div class="flex items-center overflow-hidden rounded-[5px] border-2 border-main bg-white">
+        ${bareSelect(`data-key="recurrence" aria-label="繰り返し"`, recurrences, "border-r-[3px] border-dashed border-off")}
+        ${bareSelect(`data-key="weekday" aria-label="除外する曜日"`, weekdays)}
       </div>
       <span>の</span>
-      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes, disabled)}
-      ${removeButton(removable, disabled)}
+      ${timeRange(GREEN, `data-key="startMinutes"`, `data-key="endMinutes"`, rule.startMinutes, rule.endMinutes)}
     </div>
   `;
 }

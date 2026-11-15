@@ -35,6 +35,7 @@ export interface SearchOptions {
  */
 export type Preference = "none" | "freeDayOnly" | "buffer";
 
+
 /** 「日付を指定して除外」の1行分 */
 export interface DateExclusion {
   /** <input type="date"> の値（"2026-11-11"）。未入力なら空文字 */
@@ -58,3 +59,12 @@ export interface WeekdayExclusion {
   startMinutes: number;
   endMinutes: number;
 }
+
+/** 除外ルールの種類。カードのプルダウンで選ぶ（date: 日付を指定して除外 / weekday: 曜日を指定して除外） */
+export type ExclusionKind = "date" | "weekday";
+
+/**
+ * 「指定した日程を除外」のカード1枚分。日付と曜日のルールを混ぜて何枚でも作れる。
+ * 種類を切り替えても入力した値が消えないよう、日付用・曜日用の両方の値を持っておき、kind のほうだけを使う
+ */
+export type ExclusionRule = { kind: ExclusionKind } & DateExclusion & WeekdayExclusion;

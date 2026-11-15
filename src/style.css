@@ -13,6 +13,10 @@
   /* 「提案するスケジュール」以降の紺系 */
   --color-sub2: #454e88;
   --color-main2: #7b85c2;
+  /* さらに濃い紺。ランダム選択ボタンの文字（Figma で名前の付いていない色） */
+  --color-deep2: #252b50;
+  /* ごく薄い青。上に固定した条件パネルの背景（Figma で名前の付いていない色） */
+  --color-panel2: #e9f1ff;
   --color-frame2: #afc6f0; /* third2 */
   /* 薄い紺。frame2 の30%を白に混ぜた不透明な色（frame2/30 と見た目は同じだが、後ろが透けない） */
   --color-pale2: color-mix(in oklab, var(--color-frame2) 30%, white);
@@ -50,6 +54,19 @@
     width: 10px;
     height: 7px;
     mask: url("./assets/icon-select-down.svg") center / contain no-repeat;
+  }
+  /* 条件の一覧を開け閉めする矢印（Figma の Vector 2。下向き）。icon-select-down と同じく mask で切り抜き、
+     bg-current で文字と同じ色に塗る。カーソルを乗せて文字が濃くなると、矢印も一緒に濃くなる */
+  .icon-chevron-down {
+    width: 10px;
+    height: 7px;
+    mask: url("./assets/chevron-down.svg") center / contain no-repeat;
+  }
+  /* 「条件を編集」の戻る矢印（Figma の Frame 44）。mask で切り抜き、bg-current で文字と同じ色に塗る */
+  .icon-undo {
+    width: 11px;
+    height: 14px;
+    mask: url("./assets/icon-undo.svg") center / contain no-repeat;
   }
   /* Figma のラジオボタン。未選択は紺の丸枠だけ、選択中は Figma から書き出した画像 */
   .radio {
