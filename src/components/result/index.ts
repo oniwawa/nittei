@@ -6,6 +6,7 @@ export { buttonCandidate } from "./buttonCandidate";
 export { buttonOtherEvents } from "./buttonOtherEvents";
 export { itemCondition } from "./itemCondition";
 export { listOtherEvents } from "./listOtherEvents";
+export { randomSelect } from "./randomSelect";
 export { resizeHint } from "./resizeHint";
 export { tabCandidateView } from "./tabCandidateView";
 export { timelineCandidate } from "./timelineCandidate";

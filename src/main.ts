@@ -3,7 +3,7 @@
 import "./style.css";
 import { formatDate, formatTime, formatWithTemplate, minutesToTime } from "./format";
 import { RECURRENCE_CHOICES, WEEKDAY_NAMES } from "./choices";
-import { dateExclusionRow, weekdayExclusionRow } from "./components/form";
+import { exclusionCard } from "./components/form";
 import {
   buttonCandidate,
   buttonOtherEvents,
@@ -17,7 +17,7 @@ import { renderLayout } from "./layout";
 import { connectGoogle, disconnectGoogle, fetchGoogleBusy, isConfigured, isConnected, loadGoogleScript } from "./google";
 import { exclusionSlots, findFreeSlots, upcomingDays } from "./slots";
 import { readTime, setUpTimePickers } from "./timePicker";
-import type { DateExclusion, ExclusionMode, Preference, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
+import type { ExclusionKind, ExclusionRule, Preference, Recurrence, SearchOptions, TimeSlot, WeekdayExclusion } from "./types";
 
 // ---------- 画面の部品を取得 ----------
 
@@ -53,12 +53,8 @@ const calendarStatus = getElement<HTMLSpanElement>("#calendar-status");
 const calendarDisconnectButton = getElement<HTMLButtonElement>("#calendar-disconnect");
 
 // 指定した日程を除外
-const exclusionModeSelect = getElement<HTMLSelectElement>("#exclusion-mode");
-const exclusionGroups = [...document.querySelectorAll<HTMLElement>("[data-exclusion-mode]")];
-const dateExclusionList = getElement<HTMLDivElement>("#date-exclusion-list");
-const addDateExclusionButton = getElement<HTMLButtonElement>("#add-date-exclusion");
-const weekdayExclusionList = getElement<HTMLDivElement>("#weekday-exclusion-list");
-const addWeekdayExclusionButton = getElement<HTMLButtonElement>("#add-weekday-exclusion");
+const exclusionList = getElement<HTMLDivElement>("#exclusion-list");
+const addExclusionButton = getElement<HTMLButtonElement>("#add-exclusion");
 
 // 日程の条件
 const weekdayButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-weekday]")];
@@ -86,6 +82,9 @@ const resultView = getElement<HTMLElement>("#result-view");
 const resultSummary = getElement<HTMLSpanElement>("#result-summary");
 const candidateList = getElement<HTMLDivElement>("#candidate-list");
 const candidateTimeline = getElement<HTMLDivElement>("#candidate-timeline");
+// 「ランダムで [〇] 件選択」は候補日パネルとコピペ用文章パネルの2か所にある
+const randomSelectBoxes = [...document.querySelectorAll<HTMLDivElement>("[data-random-select]")];
+const randomCountInputs = [...document.querySelectorAll<HTMLInputElement>("[data-random-count]")];
 const resultTabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"][data-view]')];
 const resultMessage = getElement<HTMLTextAreaElement>("#result-message");
 const copyButton = getElement<HTMLButtonElement>("#copy-button");
@@ -103,8 +102,8 @@ interface AppState {
   busy: TimeSlot[];
   /** 候補にする曜日（Figma の初期表示に合わせて月〜金） */
   includedWeekdays: Set<number>;
-  dateExclusions: DateExclusion[];
-  weekdayExclusions: WeekdayExclusion[];
+  /** 「指定した日程を除外」のカード。日付と曜日のルールが、追加した順に混ざって並ぶ */
+  exclusions: ExclusionRule[];
   /** 「日程候補をまとめて出力」を押したときに計算した候補と、その中で選ばれているもの */
   result: {
     slots: TimeSlot[];
@@ -128,9 +127,11 @@ interface AppState {
 
 type CandidateView = "buttons" | "timeline";
 
-// 「＋ 条件を追加」で増える行の初期値。毎回新しいオブジェクトを作るため関数にしている
-const newDateExclusion = (): DateExclusion => ({ date: "", startMinutes: 8 * 60, endMinutes: 16 * 60 });
-const newWeekdayExclusion = (): WeekdayExclusion => ({
+// 「＋ 条件を追加」で増えるカードの初期値。毎回新しいオブジェクトを作るため関数にしている。
+// 最初は「日付を指定して除外」。曜日に切り替えたときのための値（毎週・月曜日）も入れておく
+const newExclusion = (): ExclusionRule => ({
+  kind: "date",
+  date: "",
   recurrence: "weekly",
   weekday: 1,
   startMinutes: 8 * 60,
@@ -140,8 +141,7 @@ const newWeekdayExclusion = (): WeekdayExclusion => ({
 const state: AppState = {
   busy: [],
   includedWeekdays: new Set([1, 2, 3, 4, 5]),
-  dateExclusions: [newDateExclusion()],
-  weekdayExclusions: [newWeekdayExclusion()],
+  exclusions: [], // 最初はカード無し（「＋ 条件を追加」だけが見える）
   result: {
     slots: [],
     selected: new Set(),
@@ -209,20 +209,11 @@ function readPreference(): Preference {
   return (preferenceRadios.find((radio) => radio.checked)?.value ?? "none") as Preference;
 }
 
-/** 「指定した日程を除外」のプルダウンで選んでいるもの */
-function readExclusionMode(): ExclusionMode {
-  return exclusionModeSelect.value as ExclusionMode;
-}
-
-/**
- * プルダウンで選んでいるほうの除外ルールだけを返す。
- * 選んでいないほうに入力したルールは消さずに残しておくが（切り替えて戻ると元どおり）、計算には使わない
- */
-function activeExclusions(): { dates: DateExclusion[]; weekdays: WeekdayExclusion[] } {
-  const mode = readExclusionMode();
+/** 除外ルールのカードを、日付のルールと曜日のルールに分けて返す（計算や条件の一覧で使う） */
+function activeExclusions(): { dates: ExclusionRule[]; weekdays: ExclusionRule[] } {
   return {
-    dates: mode === "date" ? state.dateExclusions : [],
-    weekdays: mode === "weekday" ? state.weekdayExclusions : [],
+    dates: state.exclusions.filter((rule) => rule.kind === "date"),
+    weekdays: state.exclusions.filter((rule) => rule.kind === "weekday"),
   };
 }
 
@@ -244,25 +235,9 @@ function renderCalendarStatus(calendarCount?: number): void {
   calendarDisconnectButton.hidden = !connected;
 }
 
-/** プルダウンで選んだほうの入力欄だけを表示する */
-function renderExclusionMode(): void {
-  const mode = readExclusionMode();
-  for (const group of exclusionGroups) group.hidden = group.dataset.exclusionMode !== mode;
-}
-
-// 選ばれていないほうは隠すので、入力欄はいつも選べる状態(disabled = false)で作る
-function renderDateExclusions(): void {
-  const removable = state.dateExclusions.length > 1; // 最後の1行は消せない
-  dateExclusionList.innerHTML = state.dateExclusions
-    .map((rule, index) => dateExclusionRow(rule, index, false, removable))
-    .join("");
-}
-
-function renderWeekdayExclusions(): void {
-  const removable = state.weekdayExclusions.length > 1;
-  weekdayExclusionList.innerHTML = state.weekdayExclusions
-    .map((rule, index) => weekdayExclusionRow(rule, index, false, removable))
-    .join("");
+/** 除外ルールのカードを作り直す。カードが無いときは並べる場所ごと隠れる（exclusionList の empty:hidden） */
+function renderExclusions(): void {
+  exclusionList.innerHTML = state.exclusions.map((rule, index) => exclusionCard(rule, index)).join("");
 }
 
 function renderWeekdays(): void {
@@ -317,62 +292,37 @@ function rowIndexOf(element: HTMLElement): number {
   return row ? Number(row.dataset.index) : -1;
 }
 
-/**
- * 除外ルールの一覧に「追加」「削除」の操作を付ける。日付と曜日で共通。
- * 行ごとにリスナーを付けず、親の1か所でまとめて受け取る（イベントの委譲）
- */
-function setUpExclusionList<T>(
-  list: HTMLElement,
-  addButton: HTMLButtonElement,
-  rules: T[],
-  createRule: () => T,
-  render: () => void,
-): void {
-  addButton.addEventListener("click", () => {
-    rules.push(createRule());
-    render();
-  });
-  list.addEventListener("click", (event) => {
-    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action=remove]");
-    if (!button) return;
-    rules.splice(rowIndexOf(button), 1); // splice(位置, 1) でその1件だけ取り除く
-    render();
-  });
-}
+addExclusionButton.addEventListener("click", () => {
+  state.exclusions.push(newExclusion());
+  renderExclusions();
+});
 
-exclusionModeSelect.addEventListener("change", renderExclusionMode);
+// × で、そのカードだけを消す。カードごとにリスナーを付けず、親の1か所でまとめて受け取る（イベントの委譲）
+exclusionList.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action=remove]");
+  if (!button) return;
+  state.exclusions.splice(rowIndexOf(button), 1); // splice(位置, 1) でその1件だけ取り除く
+  renderExclusions();
+});
 
-setUpExclusionList(dateExclusionList, addDateExclusionButton, state.dateExclusions, newDateExclusion, renderDateExclusions);
-setUpExclusionList(
-  weekdayExclusionList,
-  addWeekdayExclusionButton,
-  state.weekdayExclusions,
-  newWeekdayExclusion,
-  renderWeekdayExclusions,
-);
-
-// 入力が変わったら state の該当する行を書き換える（再描画はしないので入力中のフォーカスは外れない）
+// 入力が変わったら state の該当するカードを書き換える（再描画はしないので入力中のフォーカスは外れない）。
+// 種類(kind)を変えたときだけは、入力欄を入れ替えるために作り直す。
 // 開始時刻は「時」「分」のプルダウンの外側に data-key があるので、closest で外側までたどって探す
-dateExclusionList.addEventListener("change", (event) => {
+exclusionList.addEventListener("change", (event) => {
   const keyed = (event.target as HTMLElement).closest<HTMLElement>("[data-key]");
-  const rule = state.dateExclusions[rowIndexOf(event.target as HTMLElement)];
+  const index = rowIndexOf(event.target as HTMLElement);
+  const rule = state.exclusions[index];
   if (!keyed || !rule) return;
   switch (keyed.dataset.key) {
+    case "kind":
+      rule.kind = (keyed as HTMLSelectElement).value as ExclusionKind;
+      renderExclusions();
+      // 作り直したプルダウンにフォーカスを戻し、キーボードで続けて操作できるようにする
+      exclusionList.querySelector<HTMLElement>(`[data-index="${index}"] [data-key="kind"]`)?.focus();
+      break;
     case "date":
       rule.date = (keyed as HTMLInputElement).value;
       break;
-    case "startMinutes":
-    case "endMinutes":
-      rule[keyed.dataset.key] = readTime(keyed);
-      break;
-  }
-});
-
-weekdayExclusionList.addEventListener("change", (event) => {
-  const keyed = (event.target as HTMLElement).closest<HTMLElement>("[data-key]");
-  const rule = state.weekdayExclusions[rowIndexOf(event.target as HTMLElement)];
-  if (!keyed || !rule) return;
-  switch (keyed.dataset.key) {
     case "recurrence":
       rule.recurrence = (keyed as HTMLSelectElement).value as Recurrence;
       break;
@@ -424,10 +374,9 @@ function showToast(message: string): void {
  */
 function findMissingInputs(): HTMLInputElement[] {
   const missing: HTMLInputElement[] = [];
-  if (readExclusionMode() === "date") {
-    const dates = dateExclusionList.querySelectorAll<HTMLInputElement>('input[data-key="date"]');
-    missing.push(...[...dates].filter((input) => !input.value));
-  }
+  // 日付の入力欄は「日付を指定して除外」のカードにだけある
+  const dates = exclusionList.querySelectorAll<HTMLInputElement>('input[data-key="date"]');
+  missing.push(...[...dates].filter((input) => !input.value));
   if (periodRangeRadio.checked && !periodStartInput.value) missing.push(periodStartInput);
   return missing;
 }
@@ -482,6 +431,7 @@ exportButton.addEventListener("click", async () => {
   };
   renderCandidates();
   renderTimeline();
+  renderRandomSelect();
   showCandidateView(state.candidateView);
   renderResultMessage();
   renderConditionSummary();
@@ -531,8 +481,9 @@ function renderCandidates(): void {
     const group = document.createElement("div");
     group.className = "flex flex-col gap-3";
 
+    // 日付の下の行に「カレンダーの予定あり」ボタンを置く（Figma の heading）
     const heading = document.createElement("div");
-    heading.className = "flex flex-wrap items-center gap-3";
+    heading.className = "flex flex-col items-start gap-2";
     const date = document.createElement("h4");
     date.className = "font-semibold text-sub2";
     date.textContent = day;
@@ -554,6 +505,72 @@ function renderCandidates(): void {
   });
   candidateList.replaceChildren(...groups);
 }
+
+// ---------- ランダムで選ぶ ----------
+
+/**
+ * 「ランダムで [〇] 件選択」の件数の上限と最初の値を、候補の数に合わせる。出力するたびに呼ぶ。
+ * 最初の値は 3 件（候補が 3 件より少なければ全部）。候補が無いときはボタンごと隠す
+ */
+function renderRandomSelect(): void {
+  const total = state.result.slots.length;
+  for (const box of randomSelectBoxes) box.hidden = total === 0;
+  setRandomCount(Math.min(3, total));
+}
+
+/** 2か所の件数の入力欄を、同じ数字にそろえる */
+function setRandomCount(count: number): void {
+  for (const input of randomCountInputs) {
+    input.max = String(state.result.slots.length);
+    input.value = String(count);
+  }
+}
+
+/** 入力欄の件数を 1〜候補の数 に収めて返す。数字でないときは 1 件にする */
+function readRandomCount(input: HTMLInputElement): number {
+  const total = state.result.slots.length;
+  const count = Math.round(Number(input.value));
+  const clamped = Number.isFinite(count) ? Math.min(Math.max(count, 1), total) : 1;
+  setRandomCount(clamped); // 範囲外の数字を入れていたら、実際に選んだ件数に直して見せる
+  return clamped;
+}
+
+/**
+ * 候補の中から count 件をランダムに選ぶ。それまでの選択はいったん外して、選び直す。
+ * 番号を全部並べてシャッフル（フィッシャー–イェーツ法）し、先頭から count 件を取る
+ */
+function selectRandomly(count: number): void {
+  const indexes = state.result.slots.map((_, index) => index);
+  for (let i = indexes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1)); // 0〜i のどれか
+    [indexes[i], indexes[j]] = [indexes[j], indexes[i]]; // i 番目と j 番目を入れ替える
+  }
+  state.result.selected = new Set(indexes.slice(0, count));
+  renderCandidates();
+  renderTimeline();
+  renderResultMessage();
+}
+
+randomSelectBoxes.forEach((box, i) => {
+  const input = randomCountInputs[i];
+  box.addEventListener("click", (event) => {
+    // 入力欄のクリック（数字の上下の矢印も含む）は件数を変えるだけにする
+    if (event.target === input) return;
+    selectRandomly(readRandomCount(input));
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    // キーボードで押したときも、ボタンが沈む動きを少しの間だけ見せる
+    box.toggleAttribute("data-pressed", true);
+    window.setTimeout(() => box.toggleAttribute("data-pressed", false), 150);
+    selectRandomly(readRandomCount(input));
+  });
+  // 片方の数字を変えたら、もう片方も同じ数字にする（入力中はまだ範囲に収めない）
+  input.addEventListener("input", () => {
+    for (const other of randomCountInputs) if (other !== input) other.value = input.value;
+  });
+});
 
 /** 出力文: 選んだ候補を日時順に「出力文章の形式」で1行ずつ並べる（手で書き換えた内容は上書きされる） */
 function renderResultMessage(): void {
@@ -981,9 +998,7 @@ async function init(): Promise<void> {
     calendarStatus.textContent = "Googleカレンダー連携は未設定です（.env.local に VITE_GOOGLE_CLIENT_ID を設定）";
     calendarConnectButton.disabled = true;
   }
-  renderExclusionMode();
-  renderDateExclusions();
-  renderWeekdayExclusions();
+  renderExclusions();
   renderWeekdays();
   renderTemplate();
 }

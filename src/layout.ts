@@ -7,15 +7,14 @@ import { buttonAction, panel, panelFrame, panelHeading } from "./components/comm
 import {
   buttonWeekday,
   calendarConnect,
-  exclusionGroup,
-  exclusionModeSelect,
+  exclusionList,
   field,
   numberOptions,
   radioOption,
   selectBox,
   timeRange,
 } from "./components/form";
-import { tabCandidateView } from "./components/result";
+import { randomSelect, tabCandidateView } from "./components/result";
 import { BLUE, fieldClass, GREEN, HEADING, LABEL } from "./components/theme";
 
 /** 画面全体の外枠（入力画面と日程確定後の画面で共通） */
@@ -36,8 +35,13 @@ function resultView(): string {
            パネルの中は上から「条件を編集」→ 条件の一覧 → 「表示をたたむ」。
            たたむと section に data-collapsed が付き（main.ts の renderConditionsCollapsed）、条件の一覧だけを隠す -->
       <section id="conditions-bar" aria-label="出力した条件" class="group sticky top-0 z-20 -my-2 w-full bg-white py-2">
-        <div class="flex flex-col gap-2 rounded-[10px] border-2 border-frame2 bg-white px-3 py-2 text-xs">
-          ${buttonAction({ id: "back-button", label: "条件を編集", variant: "secondary", size: "small", className: "w-full" })}
+        <div class="flex flex-col gap-2 rounded-[10px] border-2 border-frame2 bg-panel2 px-3 py-2 text-xs">
+          <!-- 「条件を編集」: 白い丸いボタンに戻る矢印（Figma の button_action + Frame 44）。左寄せ -->
+          <button id="back-button" type="button"
+            class="flex cursor-pointer items-center gap-2 self-start rounded-[30px] border-2 border-sub2 bg-white px-6 py-2 font-semibold text-sub2 shadow-button transition-colors hover:bg-pale2">
+            <span aria-hidden="true" class="icon-undo bg-current"></span>
+            条件を編集
+          </button>
           <div id="condition-summary-box" class="group-data-collapsed:hidden">
             <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める）。
                  列の幅は半分ずつではなく中身の幅(max-content)にして、短い内容の右に空きができないようにする -->
@@ -54,14 +58,16 @@ function resultView(): string {
         </div>
       </section>
       <section class="flex w-full flex-col gap-8">
-        <h2 class="${HEADING} text-sub2">提案日程を選ぶ</h2>
+        <h2 class="${HEADING} text-sub2">あなたの候補日程一覧</h2>
 
         ${panel(
           BLUE,
           "候補日",
-          `提案したい日時をクリックして選んでください。複数選択できます。<br />
+          `相手に提案したい日時をクリックして選んでください。複数選択ができます。<br />
           <span id="result-summary" class="text-main2"></span>`,
           `<div class="flex flex-col gap-6">
+            <!-- ランダム選択は、一覧・タイムラインのどちらの表示でも使えるよう、タブの上の右端に置く -->
+            ${randomSelect()}
             <!-- 表示方法の切り替え。選んだ候補は両方で共通（main.ts の showCandidateView） -->
             <div role="tablist" aria-label="候補日の表示方法" class="flex gap-2 border-b-2 border-frame2">
               ${tabCandidateView("buttons", "一覧", "candidate-list", false)}
@@ -75,10 +81,11 @@ function resultView(): string {
 
         ${panel(
           BLUE,
-          "出力文",
-          "候補日を選択すると文章が出力されます。候補日は日付の早い順に並びます。",
-          `<!-- コピーのボタンは出力文の枠の中、文章のすぐ下に置く -->
+          "コピペ用文章",
+          "選んだ候補日が日付の早い順に出力されます。以下のテキストボックスから直接書き換えることも可能です。",
+          `<!-- ランダム選択は文章の上の右端に、コピーのボタンは文章のすぐ下に置く -->
           <div class="flex flex-col gap-4">
+            ${randomSelect()}
             <textarea id="result-message" rows="8" spellcheck="false" aria-label="出力文"
               class="${fieldClass(BLUE)} w-full resize-y leading-relaxed"></textarea>
             <div class="flex w-full flex-col items-center gap-2">
@@ -149,10 +156,8 @@ export function renderLayout(root: HTMLElement): void {
             "カレンダーの予定に加えて予定が入りそうな曜日や日にちを候補から除くことができます",
           )}
           <div class="flex flex-col gap-4">
-            <!-- まずプルダウンで日付か曜日かを選び、選んだほうの入力欄だけを出す -->
-            ${exclusionModeSelect()}
-            ${exclusionGroup("date", "date-exclusion-list", "add-date-exclusion")}
-            ${exclusionGroup("weekday", "weekday-exclusion-list", "add-weekday-exclusion")}
+            <!-- 「＋ 条件を追加」で除外ルールのカードを足す。カードごとに日付か曜日かをプルダウンで選ぶ -->
+            ${exclusionList("exclusion-list", "add-exclusion")}
           </div>`,
           "flex-1",
         )}
