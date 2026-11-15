@@ -19,12 +19,11 @@ import { BLUE, fieldClass, GREEN, HEADING, LABEL } from "./components/theme";
 
 /**
  * 画面全体の外枠（入力画面と日程確定後の画面で共通）。
- * 下の余白（フッターの上の空白）は、Figma の 244px（スマホは 96px）の半分にしている
+ * - 上の余白は、出力画面（Figma で条件の帯の下 32px）に合わせて、どちらの画面も 32px
+ * - 下の余白（フッターの上の空白）は、Figma の 244px（スマホは 96px）の半分
  */
 const PAGE =
-  "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-12 text-base md:pt-[168px] md:pb-[122px]";
-/** 結果画面。上に条件の帯を置くので、上の余白は Figma に合わせて小さくする（スマホも PC も 32px） */
-const RESULT_PAGE = PAGE.replace("pt-16", "pt-8").replace("md:pt-[168px]", "md:pt-8");
+  "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-8 pb-12 text-base md:pb-[122px]";
 
 // ---------- 出力画面（Figma の 出力画面_タイムライン表示 / 出力画面_ボタン表示） ----------
 
@@ -58,7 +57,7 @@ function resultView(): string {
         </div>
       </section>
 
-      <main class="${RESULT_PAGE}">
+      <main class="${PAGE}">
       <section class="flex w-full flex-col gap-8">
         <h2 class="${HEADING} text-sub2">あなたの候補日程一覧</h2>
 
