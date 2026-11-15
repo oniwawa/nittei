@@ -14,34 +14,34 @@ import {
   selectBox,
   timeRange,
 } from "./components/form";
-import { randomSelect, tabCandidateView } from "./components/result";
+import { buttonEditConditions, randomSelect, tabCandidateView } from "./components/result";
 import { BLUE, fieldClass, GREEN, HEADING, LABEL } from "./components/theme";
 
-/** 画面全体の外枠（入力画面と日程確定後の画面で共通） */
+/**
+ * 画面全体の外枠（入力画面と日程確定後の画面で共通）。
+ * 下の余白（フッターの上の空白）は、Figma の 244px（スマホは 96px）の半分にしている
+ */
 const PAGE =
-  "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-24 text-base md:pt-[168px] md:pb-[244px]";
-/** 結果画面。上に条件のパネルを置くので、md以上の上の余白は Figma に合わせて小さくする */
-const RESULT_PAGE = PAGE.replace("md:pt-[168px]", "md:pt-8");
+  "mx-auto flex w-full max-w-[1075px] flex-col items-center gap-[52px] px-4 pt-16 pb-12 text-base md:pt-[168px] md:pb-[122px]";
+/** 結果画面。上に条件の帯を置くので、上の余白は Figma に合わせて小さくする（スマホも PC も 32px） */
+const RESULT_PAGE = PAGE.replace("pt-16", "pt-8").replace("md:pt-[168px]", "md:pt-8");
 
 // ---------- 出力画面（Figma の 出力画面_タイムライン表示 / 出力画面_ボタン表示） ----------
 
 /** 「日程候補をまとめて出力」を押した後に表示する画面。最初は hidden で隠しておく */
 function resultView(): string {
   return `
-    <main id="result-view" hidden class="${RESULT_PAGE}">
+    <div id="result-view" hidden>
       <!-- 出力した条件と「条件を編集」ボタン（Figma の panel_conditionSummary）。
-           画面のいちばん上に置き、スクロールしても上に残す。外側の section を sticky で固定し、白い背景で下を流れる候補日を隠す。
-           上下の py-2 は固定されたときの余白で、-my-2 で固定前の位置がずれないよう打ち消している。
-           パネルの中は上から「条件を編集」→ 条件の一覧 → 「表示をたたむ」。
+           ヘッダーと同じく画面の端から端まで薄い青(panel2)の帯にし、スクロールしても上に残す(sticky)。
+           帯を画面の幅いっぱいにするため、幅の決まった main の外（main の上）に置く。
+           中身はヘッダーと同じ幅(1075px)・左右の余白(16px)にそろえる。
+           中は上から「条件を編集」→ 条件の一覧 → 「表示をたたむ」。
            たたむと section に data-collapsed が付き（main.ts の renderConditionsCollapsed）、条件の一覧だけを隠す -->
-      <section id="conditions-bar" aria-label="出力した条件" class="group sticky top-0 z-20 -my-2 w-full bg-white py-2">
-        <div class="flex flex-col gap-2 rounded-[10px] border-2 border-frame2 bg-panel2 px-3 py-2 text-xs">
-          <!-- 「条件を編集」: 白い丸いボタンに戻る矢印（Figma の button_action + Frame 44）。左寄せ -->
-          <button id="back-button" type="button"
-            class="flex cursor-pointer items-center gap-2 self-start rounded-[30px] border-2 border-sub2 bg-white px-6 py-2 font-semibold text-sub2 shadow-button transition-colors hover:bg-pale2">
-            <span aria-hidden="true" class="icon-undo bg-current"></span>
-            条件を編集
-          </button>
+      <section id="conditions-bar" aria-label="出力した条件" class="group sticky top-0 z-20 w-full border-b-2 border-frame2 bg-panel2">
+        <div class="mx-auto flex max-w-[1075px] flex-col gap-2 px-4 py-3 text-xs">
+          <!-- 「条件を編集」: 白い丸いボタンに戻る矢印。左寄せ -->
+          ${buttonEditConditions("back-button", "start")}
           <div id="condition-summary-box" class="group-data-collapsed:hidden">
             <!-- 中身は main.ts の renderConditionSummary が作る。lg以上は2列（左の列から縦に埋める）。
                  列の幅は半分ずつではなく中身の幅(max-content)にして、短い内容の右に空きができないようにする -->
@@ -57,6 +57,8 @@ function resultView(): string {
           </button>
         </div>
       </section>
+
+      <main class="${RESULT_PAGE}">
       <section class="flex w-full flex-col gap-8">
         <h2 class="${HEADING} text-sub2">あなたの候補日程一覧</h2>
 
@@ -97,7 +99,11 @@ function resultView(): string {
         )}
       </section>
 
-    </main>
+      <!-- 画面のいちばん下にも「条件を編集」を置く。候補を見終わったあと、上まで戻らずに条件を直せるように。
+           上の帯のボタンと同じ部品なので、大きさ・アイコンがそろう。こちらは中央ぞろえ。押すと入力画面に戻る -->
+      ${buttonEditConditions("back-button-bottom", "center")}
+      </main>
+    </div>
   `;
 }
 

@@ -91,6 +91,7 @@ const copyButton = getElement<HTMLButtonElement>("#copy-button");
 const copyStatus = getElement<HTMLSpanElement>("#copy-status");
 const conditionSummary = getElement<HTMLDListElement>("#condition-summary");
 const backButton = getElement<HTMLButtonElement>("#back-button");
+const backButtonBottom = getElement<HTMLButtonElement>("#back-button-bottom");
 const conditionsBar = getElement<HTMLElement>("#conditions-bar");
 const conditionsToggle = getElement<HTMLButtonElement>("#conditions-toggle");
 const conditionsToggleLabel = getElement<HTMLSpanElement>("#conditions-toggle-label");
@@ -689,7 +690,7 @@ function onCandidateClick(event: MouseEvent, container: HTMLElement): void {
 }
 
 /** 吹き出しを出しておく時間(ミリ秒) */
-const RESIZE_HINT_MS = 5000;
+const RESIZE_HINT_MS = 4000;
 /** 吹き出しが透明になっていく時間(ミリ秒)。resizeHint の duration-1000 と合わせる */
 const RESIZE_HINT_FADE_MS = 1000;
 /** 吹き出しを消すタイマー */
@@ -703,7 +704,7 @@ let currentResizeHint: HTMLDivElement | undefined;
 let resizeHintShown = false;
 
 /**
- * タイムラインの候補ブロックの上に「上/下をドラッグして時間を調節できます」を5秒だけ出す。
+ * タイムラインの候補ブロックの上に「上/下をドラッグして時間を調節できます」を4秒だけ出す。
  * ページを開いてから最初にクリックしたときの1回だけ出す。
  * 吹き出しは body に入れて、ブロックの少し上に置く（resizeHint）
  */
@@ -714,7 +715,7 @@ function showResizeHint(button: HTMLElement): void {
   const hint = resizeHint(button);
   document.body.append(hint);
   currentResizeHint = hint;
-  // 5秒たったら opacity-0 を付けて1秒かけて透明にし、消え終わったら取り除く
+  // 4秒たったら opacity-0 を付けて1秒かけて透明にし、消え終わったら取り除く
   resizeHintTimer = window.setTimeout(() => {
     hint.classList.add("opacity-0");
     // 動きを付けない設定のときは transitionend が来ないので、時間でも取り除く
@@ -999,7 +1000,8 @@ copyButton.addEventListener("click", async () => {
   }
 });
 
-backButton.addEventListener("click", () => showView("form"));
+// 「条件を編集」は上に固定したパネルと画面のいちばん下の2か所にあり、どちらも入力画面に戻る
+for (const button of [backButton, backButtonBottom]) button.addEventListener("click", () => showView("form"));
 
 // ---------- 上に固定した条件のたたみ / 表示 ----------
 
